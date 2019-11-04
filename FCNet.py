@@ -11,7 +11,7 @@ class FCNet(torch.nn.Module):
                 device=torch.device('cpu')
     ):
 
-        super(FC_3_layers, self).__init__()
+        super(FCNet, self).__init__()
         self.dim_output = dim_output
         self.dim_input = dim_input
         self.num_hidden_units = num_hidden_units
