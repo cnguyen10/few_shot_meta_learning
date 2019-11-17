@@ -23,7 +23,7 @@ dataset
 ```
 
 ## Run
-Before running, please go to each script and modify the path to save the files by looking for `dst_folder_root` and `dst_folder`. The epoch here is locally defined through `expected_total_tasks_per_epoch` tasks (e.g. 10k tasks = 1 epoch), and therefore, different from the definition of epoch in conventional machine learning.
+Before running, please go to each script and modify the path to save the files by looking for `dst_folder_root` (in both the script of interest and `utils.py` for data loading) and `dst_folder`. The epoch here is locally defined through `expected_total_tasks_per_epoch` tasks (e.g. 10k tasks = 1 epoch), and therefore, different from the definition of epoch in conventional machine learning.
 To run, copy and paste the command at the beginning of each algorithm script and change the configurable parameters (if needed).
 
 ## Test
