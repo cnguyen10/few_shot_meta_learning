@@ -86,7 +86,7 @@ num_epochs = args.num_epochs
 num_inner_updates = args.num_inner_updates
 print('Number of inner updates = {0:d}'.format(num_inner_updates))
 
-dst_root_folder = '/media/n10/Data'
+dst_root_folder = '.'
 dst_folder = '{0:s}/MAML_{1:s}_{2:d}way_{3:d}shot'.format(
     dst_root_folder,
     datasource,

@@ -6,7 +6,7 @@ This repository contains the implementations of many meta-learning algorithms to
 - [Amortized Bayesian Meta-Learning](https://openreview.net/pdf?id=rkgpy3C5tX)
 - [Uncertainty in Model-Agnostic Meta-Learning using Variational Inference (VAMPIRE)](https://arxiv.org/abs/1907.11864)
 
-These have been tested to work with Pytorch 1.0 and above.
+These have been tested to work with Pytorch 1.2.
 
 ## Data source
 ### Regression
@@ -23,7 +23,7 @@ dataset
 ```
 
 ## Run
-Before running, please go to each script and modify the path to save the files by looking for `dst_folder_root` and `dst_folder`. The epoch here is locally defined through `expected_total_tasks_per_epoch` tasks (e.g. 10k tasks = 1 epoch), and therefore, different from the conventional epoch.
+Before running, please go to each script and modify the path to save the files by looking for `dst_folder_root` and `dst_folder`. The epoch here is locally defined through `expected_total_tasks_per_epoch` tasks (e.g. 10k tasks = 1 epoch), and therefore, different from the definition of epoch in conventional machine learning.
 To run, copy and paste the command at the beginning of each algorithm script and change the configurable parameters (if needed).
 
 ## Test

@@ -181,7 +181,7 @@ num_val_tasks = args.num_val_tasks
 
 p_dropout_base = args.p_dropout_base
 
-dst_folder_root = '/media/n10/Data'
+dst_folder_root = '.'
 dst_folder = '{0:s}/BMAML_few_shot/BMAML_{1:s}_{2:d}way_{3:d}shot'.format(
     dst_folder_root,
     datasource,

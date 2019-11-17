@@ -154,7 +154,7 @@ w_target_shape = net.get_weight_shape()
 num_weights = get_num_weights(my_net=net)
 print('Number of weights of base model = \t {0:d}'.format(num_weights))
 
-dst_folder_root = '/media/n10/Data'
+dst_folder_root = '.'
 
 dst_folder = '{0:s}/Amortised_ML_few_shot_meta/Amortised_ML_{1:s}_{2:d}way_{3:d}shot'.format(
     dst_folder_root,
