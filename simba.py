@@ -1,17 +1,17 @@
 '''
-python3 simba_pzx_amortized.py --datasource=sine_line --n_way=1 --k_shot=5 --Lt=32 --Lv=32 --delta=0.01 --inner_lr=1e-3 --meta_lr=1e-4 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=50 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --resume_epoch=0
+python3 simba.py --datasource=sine_line --n_way=1 --k_shot=5 --Lt=32 --Lv=32 --delta=0.01 --inner_lr=1e-3 --meta_lr=1e-4 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=50 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --resume_epoch=0
 
-python3 simba_pzx_amortized.py --datasource=sine_line --n_way=1 --k_shot=5 --Lt=64 --Lv=64 --inner_lr=1e-3 --discriminator_inner_lr=1e-4 --discriminator_minibatch_size=1024 --resume_epoch=22 --test --num_val_tasks=0 --sine_or_line=sine
-
-
-python3 simba_pzx_amortized.py --datasource=miniImageNet --n_way=5 --k_shot=1 --Lt=8 --Lv=8 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --resume_epoch=14
-
-python3 simba_pzx_amortized.py --datasource=miniImageNet --n_way=5 --k_shot=1 --Lt=8 --Lv=8 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --resume_epoch=14 --test --no_uncertainty --num_val_tasks=15504
+python3 simba.py --datasource=sine_line --n_way=1 --k_shot=5 --Lt=64 --Lv=64 --inner_lr=1e-3 --discriminator_inner_lr=1e-4 --discriminator_minibatch_size=1024 --resume_epoch=22 --test --num_val_tasks=0 --sine_or_line=sine
 
 
-python3 simba_pzx_amortized.py --datasource=miniImageNet_embedding --n_way=5 --k_shot=1 --Lt=32 --Lv=32 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --p_dropout_base=0.3 --resume_epoch=0 --num_epochs=5
+python3 simba.py --datasource=miniImageNet --n_way=5 --k_shot=1 --Lt=8 --Lv=8 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --resume_epoch=14
 
-python3 simba_pzx_amortized.py --datasource=tieredImageNet_embedding --n_way=5 --k_shot=1 --Lt=32 --Lv=32 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --p_base_dropout=0.3 --resume_epoch=0
+python3 simba.py --datasource=miniImageNet --n_way=5 --k_shot=1 --Lt=8 --Lv=8 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --resume_epoch=14 --test --no_uncertainty --num_val_tasks=15504
+
+
+python3 simba.py --datasource=miniImageNet_embedding --n_way=5 --k_shot=1 --Lt=32 --Lv=32 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --p_dropout_base=0.3 --resume_epoch=0 --num_epochs=5
+
+python3 simba.py --datasource=tieredImageNet_embedding --n_way=5 --k_shot=1 --Lt=32 --Lv=32 --delta=1e-1 --inner_lr=1e-2 --meta_lr=1e-4 --L2_regularization=1e-5 --discriminator_inner_lr=1e-4 --discriminator_meta_lr=1e-5 --minibatch_size=2 --discriminator_minibatch_size=1024 --encoder_lr=1e-4 --clip_grad_value=10 --p_base_dropout=0.3 --resume_epoch=0
 '''
 
 import torch

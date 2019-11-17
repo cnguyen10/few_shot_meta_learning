@@ -1,7 +1,7 @@
 '''
-python3 amortized_ml.py --datasource=sine_line --k_shot=5 --n_way=1 --Lt=128 --Lv=128 --minibatch_size=10 --inner_lr=1e-3 --meta_lr=1e-3 --resume_epoch=0
+python3 abml.py --datasource=sine_line --k_shot=5 --n_way=1 --Lt=128 --Lv=128 --minibatch_size=10 --inner_lr=1e-3 --meta_lr=1e-3 --resume_epoch=0
 
-python3 amortized_ml.py --datasource=miniImageNet --k_shot=1 --n_way=5 --Lt=10 --Lv=10 --minibatch_size=2 --inner_lr=1e-2 --meta_lr=1e-3 --kl_reweight=0.1 --resume_epoch=0 --num_epochs=10
+python3 abml.py --datasource=miniImageNet --k_shot=1 --n_way=5 --Lt=10 --Lv=10 --minibatch_size=2 --inner_lr=1e-2 --meta_lr=1e-3 --kl_reweight=0.1 --resume_epoch=0 --num_epochs=10
 '''
 
 import torch
