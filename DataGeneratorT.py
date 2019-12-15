@@ -46,7 +46,7 @@ class DataGenerator(object):
 
         if noise_flag:
             output_noises = torch.randn((self.num_samples, 1), device=self.device)
-            outputs = outputs + (self.noise_std**2)*output_noises
+            outputs = outputs + self.noise_std*output_noises
 
         return x_inputs, outputs, amp, phase
     
