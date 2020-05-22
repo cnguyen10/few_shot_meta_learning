@@ -1,188 +1,193 @@
 '''
-python3 bmaml.py --datasource=sine_line --n_way=1 --k_shot=5 --inner_lr=1e-3 --meta_lr=1e-3 --minibatch_size=10 --num_particles=10 --num_epochs=10 --resume_epoch=0
+python3 bmaml.py --datasource=sine_line --n_way=1 --k_shot=5 --inner_lr=1e-3 --meta_lr=1e-3 --minibatch=10 --num_particles=10 --num_epochs=10 --resume_epoch=0
 
-python3 bmaml.py --datasource=miniImageNet --n_way=5 --k_shot=1 --inner_lr=1e-2 --meta_lr=1e-3 --minibatch_size=2 --num_particles=8 --num_epochs=20 --resume_epoch=0
+python3 bmaml.py --datasource=sine_line --n_way=1 --k_shot=5 --inner_lr=1e-3 --meta_lr=1e-3 --minibatch=10 --num_particles=10 --num_epochs=10 --resume_epoch=20 --test --num_val_tasks=1000
 
-python3 bmaml.py --datasource=miniImageNet --n_way=5 --k_shot=1 --inner_lr=1e-2 --meta_lr=1e-3 --minibatch_size=2 --num_particles=8 --num_epochs=20 --resume_epoch=9 --test --uncertainty --num_val_tasks=15504
+python3 vampire.py --datasource=omniglot --n_way=5 --k_shot=1 --inner_lr=1e-2 --num_inner_updates=5 --meta_lr=1e-3 --lr_decay=0.95 --Lt=4 --Lv=4 --kl_reweight=0.1 --minibatch=10 --num_epochs=50
+
+python3 vampire.py --datasource=omniglot --n_way=5 --k_shot=1 --inner_lr=1e-2 --num_inner_updates=5 --Lt=32 --Lv=32 --kl_reweight=0.1 --resume_epoch=11 --test --no_uncertainty --num_val_tasks=100000
+
+python3 bmaml.py --datasource=miniImageNet --n_way=5 --k_shot=1 --inner_lr=1e-2 --meta_lr=1e-3 --minibatch=2 --num_particles=8 --num_epochs=20 --resume_epoch=0
+
+python3 bmaml.py --datasource=miniImageNet --n_way=5 --k_shot=1 --inner_lr=1e-2 --num_particles=8 --resume_epoch=9 --test --uncertainty --num_val_tasks=15504
+
+python3 bmaml.py --datasource=miniImageNet_640 --n_way=5 --k_shot=1 --inner_lr=1e-2 --meta_lr=1e-3 --lr_decay=0.97 --num_particles=32 --minibatch=20 --num_epochs=25 --resume_epoch=25
 '''
 
 import torch
-import torchvision
 
 import numpy as np
 import random
 import itertools
 
-from utils import get_num_weights, get_weights_target_net
+from utils import load_dataset, initialize_dataloader, get_train_val_task_data
 
 import os
 import sys
+import csv
 
 import argparse
 
-# region input parameters
+# -------------------------------------------------------------------------------------------------
+# Setup input parser
+# -------------------------------------------------------------------------------------------------
 parser = argparse.ArgumentParser(description='Setup variables for BMAML.')
 parser.add_argument('--datasource', type=str, default='miniImageNet', help='sine_line, omniglot or miniImageNet')
-parser.add_argument('--k_shot', type=int, default=1, help='Number of training samples per class')
+
 parser.add_argument('--n_way', type=int, default=5, help='Number of classes per task')
+parser.add_argument('--k_shot', type=int, default=1, help='Number of training samples per class')
+parser.add_argument('--num_val_shots', type=int, default=15, help='Number of validation samples per class')
+
+parser.add_argument('--inner_lr', type=float, default=1e-2, help='Learning rate for task adaptation')
+parser.add_argument('--num_inner_updates', type=int, default=5, help='Number of gradient updates for task adaptation')
+parser.add_argument('--meta_lr', type=float, default=1e-3, help='Learning rate of meta-parameters')
+parser.add_argument('--lr_decay', type=float, default=1, help='Decay factor of meta-learning rate (<=1), 1 = no decay')
+parser.add_argument('--minibatch', type=int, default=25, help='Number of tasks per minibatch to update meta-parameters')
+
+parser.add_argument('--num_epochs', type=int, default=100, help='How many 10,000 tasks are used to train?')
 parser.add_argument('--resume_epoch', type=int, default=0, help='Epoch id to resume learning or perform testing')
 
 parser.add_argument('--train', dest='train_flag', action='store_true')
 parser.add_argument('--test', dest='train_flag', action='store_false')
 parser.set_defaults(train_flag=True)
 
-parser.add_argument('--inner_lr', type=float, default=0.1, help='Learning rate for task-specific parameters - 0.1 for Omniglot, 0.01 for miniImageNet')
-parser.add_argument('--num_inner_updates', type=int, default=5, help='Number of gradient updates for task-specific parameters')
-parser.add_argument('--meta_lr', type=float, default=1e-3, help='Learning rate of meta-parameters')
-parser.add_argument('--minibatch_size', type=int, default=10, help='Number of tasks per minibatch to update meta-parameters')
-parser.add_argument('--num_epochs', type=int, default=1000, help='How many 10,000 tasks are used to train?')
-
 parser.add_argument('--num_particles', type=int, default=1, help='Number of particles used for SVGD')
-
-parser.add_argument('--lr_decay', type=float, default=1, help='Decay factor of meta-learning rate')
-parser.add_argument('--meta_l2_regularization', type=float, default=0, help='L2 regularization coeff. of meta-parameters')
  
 parser.add_argument('--num_val_tasks', type=int, default=100, help='Number of validation tasks')
 parser.add_argument('--uncertainty', dest='uncertainty_flag', action='store_true')
 parser.add_argument('--no_uncertainty', dest='uncertainty_flag', action='store_false')
 parser.set_defaults(uncertainty_flag=True)
 
-parser.add_argument('--p_dropout_base', type=float, default=0., help='Dropout rate for the base network')
-
-parser.add_argument('--datasubset', type=str, default='sine', help='sine or line')
-
 args = parser.parse_args()
-# endregion
 
+# -------------------------------------------------------------------------------------------------
+# Setup CPU or GPU
+# -------------------------------------------------------------------------------------------------
 gpu_id = 0
 device = torch.device('cuda:{0:d}'.format(gpu_id) if torch.cuda.is_available() else "cpu")
 
-train_flag = args.train_flag
-
-num_training_samples_per_class = args.k_shot # define the number of k-shot
-print('{0:d}-shot'.format(num_training_samples_per_class))
-
-# if train_flag:
-num_total_samples_per_class = num_training_samples_per_class + 15 # total number of samples per class
-# else:
-#     num_total_samples_per_class = num_training_samples_per_class + 20
-
-num_classes_per_task = args.n_way # n-way
-print('{0:d}-way'.format(num_classes_per_task))
-
-total_validation_samples = (num_total_samples_per_class - num_training_samples_per_class)*num_classes_per_task
-
+# -------------------------------------------------------------------------------------------------
+# Parse dataset and related variables
+# -------------------------------------------------------------------------------------------------
 datasource = args.datasource
-
-num_tasks_per_minibatch = args.minibatch_size
-num_meta_updates_print = int(1000/num_tasks_per_minibatch)
 print('Dataset = {0:s}'.format(datasource))
-print('Mini batch size = {0:d}'.format(num_tasks_per_minibatch))
 
-inner_lr = args.inner_lr
-print('Inner learning rate = {0}'.format(inner_lr))
+train_flag = args.train_flag
+print('Learning mode = {0}'.format(train_flag))
 
-expected_total_tasks_per_epoch = 10000
-num_tasks_per_epoch = int(expected_total_tasks_per_epoch/num_tasks_per_minibatch)*num_tasks_per_minibatch
+num_classes_per_task = args.n_way
+print('Number of ways = {0:d}'.format(num_classes_per_task))
 
-expected_tasks_save_loss = 2000
-num_tasks_save_loss = int(expected_tasks_save_loss/num_tasks_per_minibatch)*num_tasks_per_minibatch
+num_training_samples_per_class = args.k_shot
+print('Number of shots = {0:d}'.format(num_training_samples_per_class))
 
-num_epochs_save = 1
-num_epoch_decay_lr = 1
+num_val_samples_per_class = args.num_val_shots
+print('Number of validation samples per class = {0:d}'.format(num_val_samples_per_class))
 
-num_epochs = args.num_epochs # myriad = 10k tasks
+num_samples_per_class = num_training_samples_per_class + num_val_samples_per_class
 
-num_inner_updates = args.num_inner_updates
-print('Number of inner updates = {0:d}'.format(num_inner_updates))
-
-# learning rate
-meta_lr = args.meta_lr
-print('Meta learning rate = {0}'.format(meta_lr))
- 
-lr_decay_factor = args.lr_decay
- 
-meta_l2_regularization = args.meta_l2_regularization
-print('Meta L2 regularization = {0:1.3f}'.format(meta_l2_regularization))
-
-num_particles = args.num_particles
-print('Number of particles = {0:d}'.format(num_particles))
-
-train_set = 'train'
-val_set = 'val'
-test_set = 'test'
-
-# region Network architecture depends on the dataset
+# -------------------------------------------------------------------------------------------------
+#   Setup based model/network
+# -------------------------------------------------------------------------------------------------
 if datasource == 'sine_line':
-    from utils import get_task_sine_line_data
     from DataGeneratorT import DataGenerator
     from FCNet import FCNet
+    from utils import get_task_sine_line_data
 
+    # loss function as mean-squared error
+    loss_fn = torch.nn.MSELoss()
+
+    # Bernoulli probability for sine and line
+    # 0.5 = uniform
+    p_sine = 0.5
+
+    noise_flag = True
+
+    # based network
     net = FCNet(
         dim_input=1,
         dim_output=1,
+        # num_hidden_units=(40, 40),
         num_hidden_units=(100, 100, 100),
         device=device
     )
-    p_sine = 0.5 # bernoulli probability to pick sine or (1-p_sine) for line
-    loss_fn = torch.nn.MSELoss()
 else:
-    from utils import load_dataset, get_task_image_data
+    train_set = 'train'
+    val_set = 'val'
+    test_set = 'test'
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    sm_loss = torch.nn.Softmax(dim=2)
+    sm = torch.nn.Softmax(dim=-1)
 
-    # load data onto RAM
-    if train_flag:
-        all_class_train, embedding_train = load_dataset(datasource, train_set)
-        all_class_val, embedding_val = load_dataset(datasource, val_set)
-    else:
-        all_class_test, embedding_test = load_dataset(datasource, test_set)
-
-    if (datasource == 'omniglot'):
+    if datasource in ['omniglot', 'miniImageNet']:
         from ConvNet import ConvNet
 
-        net = ConvNet(
-            dim_input=(1, 28, 28),
-            dim_output=num_classes_per_task,
-            num_filters=(64, 64, 64, 64),
-            filter_size=(3, 3),
-            device=device
-        )
-    elif (datasource == 'miniImageNet') or (datasource == 'tieredImageNet'):
-        from ConvNet import ConvNet
+        DIM_INPUT = {
+            'omniglot': (1, 28, 28),
+            'miniImageNet': (3, 84, 84)
+        }
 
         net = ConvNet(
-            dim_input=(3, 84, 84),
+            dim_input=DIM_INPUT[datasource],
             dim_output=num_classes_per_task,
             num_filters=(32, 32, 32, 32),
             filter_size=(3, 3),
             device=device
         )
-    elif (datasource == 'miniImageNet_embedding') or (datasource == 'tieredImageNet_embedding'):
-        from FC640 import FC640
 
+    elif datasource in ['miniImageNet_640', 'tieredImageNet_640']:
+        import pickle
+        from FC640 import FC640
         net = FC640(
             dim_output=num_classes_per_task,
-            num_hidden_units=(256, 64),
+            num_hidden_units=(128, 32),
             device=device
         )
     else:
-        sys.exit('Unknown dataset')
-# endregion
+        sys.exit('Unknown dataset!')
 
-w_shape = net.get_weight_shape()
-# print(w_shape)
+weight_shape = net.get_weight_shape()
 
-num_weights = get_num_weights(net)
-print('Number of parameters of base model = {0:d}'.format(num_weights))
+# -------------------------------------------------------------------------------------------------
+# Parse training parameters
+# -------------------------------------------------------------------------------------------------
+inner_lr = args.inner_lr
+print('Inner learning rate = {0}'.format(inner_lr))
+
+num_inner_updates = args.num_inner_updates
+print('Number of inner updates = {0:d}'.format(num_inner_updates))
+
+meta_lr = args.meta_lr
+print('Meta learning rate = {0}'.format(meta_lr))
+
+num_tasks_per_minibatch = args.minibatch
+print('Minibatch = {0:d}'.format(num_tasks_per_minibatch))
+
+num_meta_updates_print = int(100 / num_tasks_per_minibatch)
+print('Mini batch size = {0:d}'.format(num_tasks_per_minibatch))
+
+num_epochs_save = 1
+
+num_epochs = args.num_epochs
+
+expected_total_tasks_per_epoch = 500
+num_tasks_per_epoch = int(expected_total_tasks_per_epoch / num_tasks_per_minibatch)*num_tasks_per_minibatch
+
+expected_tasks_save_loss = 500
+num_tasks_save_loss = int(expected_tasks_save_loss / num_tasks_per_minibatch)*num_tasks_per_minibatch
 
 num_val_tasks = args.num_val_tasks
+uncertainty_flag = args.uncertainty_flag
 
-p_dropout_base = args.p_dropout_base
+num_particles = args.num_particles
+assert num_particles > 2
+print('Number of particles = {0:d}'.format(num_particles))
 
-dst_folder_root = '.'
-dst_folder = '{0:s}/BMAML_few_shot/BMAML_{1:s}_{2:d}way_{3:d}shot'.format(
+# -------------------------------------------------------------------------------------------------
+# Setup destination folder
+# -------------------------------------------------------------------------------------------------
+dst_folder_root = './BMAML'
+dst_folder = '{0:s}/{1:s}_{2:d}way_{3:d}shot'.format(
     dst_folder_root,
     datasource,
     num_classes_per_task,
@@ -196,18 +201,21 @@ else:
     print('Found existing folder. Meta-parameters will be stored at')
 print(dst_folder)
 
+# -------------------------------------------------------------------------------------------------
+# Initialize/Load meta-parameters
+# -------------------------------------------------------------------------------------------------
 resume_epoch = args.resume_epoch
 if resume_epoch == 0:
     # initialise meta-parameters
     theta = []
     for _ in range(num_particles):
         theta_flatten = []
-        for key in w_shape.keys():
-            if isinstance(w_shape[key], tuple):
-                theta_temp = torch.empty(w_shape[key], device=device)
+        for key in weight_shape.keys():
+            if isinstance(weight_shape[key], tuple):
+                theta_temp = torch.empty(weight_shape[key], device=device)
                 torch.nn.init.xavier_normal_(tensor=theta_temp)
             else:
-                theta_temp = torch.zeros(w_shape[key], device=device)
+                theta_temp = torch.zeros(weight_shape[key], device=device)
             theta_flatten.append(torch.flatten(theta_temp, start_dim=0, end_dim=-1))
             
         theta.append(torch.cat(theta_flatten))
@@ -216,11 +224,7 @@ if resume_epoch == 0:
 else:
     print('Restore previous theta...')
     print('Resume epoch {0:d}'.format(resume_epoch))
-    checkpoint_filename = ('{0:s}_{1:d}way_{2:d}shot_{3:d}.pt')\
-                    .format(datasource,
-                            num_classes_per_task,
-                            num_training_samples_per_class,
-                            resume_epoch)
+    checkpoint_filename = 'Epoch_{0:d}.pt'.format(resume_epoch)
     checkpoint_file = os.path.join(dst_folder, checkpoint_filename)
     print('Start to load weights from')
     print('{0:s}'.format(checkpoint_file))
@@ -246,82 +250,67 @@ op_theta = torch.optim.Adam(
 
 if resume_epoch > 0:
     op_theta.load_state_dict(saved_checkpoint['op_theta'])
-
-    op_theta.param_groups[0]['lr'] = meta_lr
-
+    # op_theta.param_groups[0]['lr'] = meta_lr
     del saved_checkpoint
 
+# decay the learning rate
+scheduler = torch.optim.lr_scheduler.ExponentialLR(
+    optimizer=op_theta,
+    gamma=args.lr_decay
+)
+
+print(op_theta)
 print()
 
-uncertainty_flag = args.uncertainty_flag
-
+# -------------------------------------------------------------------------------------------------
+# MAIN program
+# -------------------------------------------------------------------------------------------------
 def main():
     if train_flag:
         meta_train()
-    elif resume_epoch > 0:
+    else: # validation
+        assert resume_epoch > 0
+
         if datasource == 'sine_line':
-            cal_data = meta_validation(datasubset=args.datasubset, num_val_tasks=num_val_tasks)
-
-            if num_val_tasks > 0:
-                cal_data = np.array(cal_data)
-                np.savetxt(fname='bmaml_{0:s}_calibration.csv'.format(datasource), X=cal_data, delimiter=',')
+            validate_regression(uncertainty_flag=uncertainty_flag, num_val_tasks=num_val_tasks)
         else:
-            if not uncertainty_flag:
-                accs, all_task_names = meta_validation(
-                    datasubset=test_set,
-                    num_val_tasks=num_val_tasks,
-                    return_uncertainty=uncertainty_flag
-                )
-                with open(file='bmaml_{0:s}_{1:d}_{2:d}_accuracies.csv'.format(datasource, num_classes_per_task, num_training_samples_per_class), mode='w') as result_file:
-                    for acc, classes_in_task in zip(accs, all_task_names):
-                        row_str = ''
-                        for class_in_task in classes_in_task:
-                            row_str = '{0}{1},'.format(row_str, class_in_task)
-                        result_file.write('{0}{1}\n'.format(row_str, acc))
-            else:
-                corrects, probs = meta_validation(
-                    datasubset=test_set,
-                    num_val_tasks=num_val_tasks,
-                    return_uncertainty=uncertainty_flag
-                )
-                with open(file='bmaml_{0:s}_correct_prob.csv'.format(datasource), mode='w') as result_file:
-                    for correct, prob in zip(corrects, probs):
-                        result_file.write('{0}, {1}\n'.format(correct, prob))
-                        # print(correct, prob)
-    else:
-        sys.exit('Unknown action')
+            all_class_test, all_data_test = load_dataset(
+                dataset_name=datasource,
+                subset=test_set
+            )
+        
+            validate_classification(
+                all_classes=all_class_test,
+                all_data=all_data_test,
+                num_val_tasks=num_val_tasks,
+                rand_flag=False,
+                uncertainty=uncertainty_flag,
+                csv_flag=True
+            )
 
-def meta_train(train_subset=train_set):
-    #region PREPARING DATALOADER
+def meta_train():
     if datasource == 'sine_line':
-        data_generator = DataGenerator(
-            num_samples=num_total_samples_per_class,
-            device=device
-        )
+        data_generator = DataGenerator(num_samples=num_samples_per_class)
         # create dummy sampler
-        all_class = [0]*100
-        sampler = torch.utils.data.sampler.RandomSampler(data_source=all_class)
-        train_loader = torch.utils.data.DataLoader(
-            dataset=all_class,
-            batch_size=num_classes_per_task,
-            sampler=sampler,
-            drop_last=True
-        )
+        all_class_train = [0] * 10
     else:
-        all_class = all_class_train
-        embedding = embedding_train
-        sampler = torch.utils.data.sampler.RandomSampler(
-            data_source=list(all_class.keys()),
-            replacement=False
+        all_class_train, all_data_train = load_dataset(
+            dataset_name=datasource,
+            subset=train_set
         )
-        train_loader = torch.utils.data.DataLoader(
-            dataset=list(all_class.keys()),
-            batch_size=num_classes_per_task,
-            sampler=sampler,
-            drop_last=True
+        all_class_val, all_data_val = load_dataset(
+            dataset_name=datasource,
+            subset=val_set
         )
-    #endregion
-    print('Start to train...')
+        all_class_train.update(all_class_val)
+        all_data_train.update(all_data_val)
+        
+    # initialize data loader
+    train_loader = initialize_dataloader(
+        all_classes=[class_label for class_label in all_class_train],
+        num_classes_per_task=num_classes_per_task
+    )
+    
     for epoch in range(resume_epoch, resume_epoch + num_epochs):
         # variables used to store information of each epoch for monitoring purpose
         meta_loss_saved = [] # meta loss to save
@@ -346,17 +335,28 @@ def meta_train(train_subset=train_set):
                         num_training_samples=num_training_samples_per_class,
                         noise_flag=True
                     )
+                    x_t = torch.tensor(x_t, dtype=torch.float, device=device)
+                    y_t = torch.tensor(y_t, dtype=torch.float, device=device)
+                    x_v = torch.tensor(x_v, dtype=torch.float, device=device)
+                    y_v = torch.tensor(y_v, dtype=torch.float, device=device)
                 else:
-                    x_t, y_t, x_v, y_v = get_task_image_data(
-                        all_class,
-                        embedding,
-                        class_labels,
-                        num_total_samples_per_class,
-                        num_training_samples_per_class,
-                        device
+                    x_t, y_t, x_v, y_v = get_train_val_task_data(
+                        all_classes=all_class_train,
+                        all_data=all_data_train,
+                        class_labels=class_labels,
+                        num_samples_per_class=num_samples_per_class,
+                        num_training_samples_per_class=num_training_samples_per_class,
+                        device=device
                     )
                 
-                loss_NLL = get_task_prediction(x_t, y_t, x_v, y_v)
+                q = adapt_to_task(x=x_t, y=y_t, theta0=theta)
+                y_pred = predict(x=x_v, q=q)
+
+                loss_NLL = 0
+                for i in range(num_particles):
+                    loss_NLL_temp = loss_fn(input=y_pred[i], target=y_v)
+                    loss_NLL = loss_NLL + loss_NLL_temp
+                loss_NLL = loss_NLL / num_particles
 
                 if torch.isnan(loss_NLL).item():
                     sys.exit('NaN error')
@@ -393,24 +393,32 @@ def meta_train(train_subset=train_set):
 
                         meta_loss_avg_save = []
 
-                        # print('Saving loss...')
-                        # val_accs, _ = meta_validation(
-                        #     datasubset=val_set,
-                        #     num_val_tasks=num_val_tasks,
-                        #     return_uncertainty=False)
-                        # val_acc = np.mean(val_accs)
-                        # val_ci95 = 1.96*np.std(val_accs)/np.sqrt(num_val_tasks)
-                        # print('Validation accuracy = {0:2.4f} +/- {1:2.4f}'.format(val_acc, val_ci95))
-                        # val_accuracies.append(val_acc)
+                        if datasource != 'sine_line':
+                            val_accs = validate_classification(
+                                all_classes=all_class_val,
+                                all_data=all_data_val,
+                                num_val_tasks=100,
+                                rand_flag=True,
+                                uncertainty=False,
+                                csv_flag=False
+                            )
+                            val_acc = np.mean(val_accs)
+                            val_ci95 = 1.96*np.std(val_accs)/np.sqrt(num_val_tasks)
+                            print('Validation accuracy = {0:2.4f} +/- {1:2.4f}'.format(val_acc, val_ci95))
+                            val_accuracies.append(val_acc)
 
-                        # train_accs, _ = meta_validation(
-                        #     datasubset=train_set,
-                        #     num_val_tasks=num_val_tasks,
-                        #     return_uncertainty=False)
-                        # train_acc = np.mean(train_accs)
-                        # train_ci95 = 1.96*np.std(train_accs)/np.sqrt(num_val_tasks)
-                        # print('Train accuracy = {0:2.4f} +/- {1:2.4f}\n'.format(train_acc, train_ci95))
-                        # train_accuracies.append(train_acc)
+                            train_accs = validate_classification(
+                                all_classes=all_class_train,
+                                all_data=all_data_train,
+                                num_val_tasks=100,
+                                rand_flag=True,
+                                uncertainty=False,
+                                csv_flag=False
+                            )
+                            train_acc = np.mean(train_accs)
+                            train_ci95 = 1.96*np.std(train_accs)/np.sqrt(num_val_tasks)
+                            print('Train accuracy = {0:2.4f} +/- {1:2.4f}\n'.format(train_acc, train_ci95))
+                            train_accuracies.append(train_acc)
                     
                     # reset meta loss
                     meta_loss = 0
@@ -426,243 +434,225 @@ def meta_train(train_subset=train_set):
                 'op_theta': op_theta.state_dict()
             }
             print('SAVING WEIGHTS...')
-            checkpoint_filename = ('{0:s}_{1:d}way_{2:d}shot_{3:d}.pt')\
-                        .format(datasource,
-                                num_classes_per_task,
-                                num_training_samples_per_class,
-                                epoch + 1)
+            checkpoint_filename = 'Epoch_{0:d}.pt'.format(epoch + 1)
             print(checkpoint_filename)
             torch.save(checkpoint, os.path.join(dst_folder, checkpoint_filename))
+        scheduler.step()
         print()
 
-def get_task_prediction(x_t, y_t, x_v, y_v=None):
-    '''
-    If y_v is not None:
-        this is training
-        return NLL loss
-    Else:
-        this is testing
-        return the predicted labels y_pred_v of x_v
-    '''
-
-    # region 1st update:
-    d_NLL = []
+def adapt_to_task(x, y, theta0):
+    # 1st gradient update
+    distance_NLL = []
     for particle_id in range(num_particles):
-        w = get_weights_target_net(w_generated=theta, row_id=particle_id, w_target_shape=w_shape)
-        y_pred_t = net.forward(x=x_t, w=w, p_dropout=p_dropout_base)
-        loss_NLL = loss_fn(y_pred_t, y_t)
+        w = get_weights_target_net(w_generated=theta0, row_id=particle_id, w_target_shape=weight_shape)
+        y_pred = net.forward(x=x, w=w)
+        loss_NLL = loss_fn(input=y_pred, target=y)
         
-        NLL_grads = torch.autograd.grad(
+        loss_NLL_grads = torch.autograd.grad(
             outputs=loss_NLL,
             inputs=w.values(),
             create_graph=True
         )
-        NLL_gradients = dict(zip(w.keys(), NLL_grads))
-        NLL_gradients_tensor = dict2tensor(dict_obj=NLL_gradients)
-        d_NLL.append(NLL_gradients_tensor)
-    d_NLL = torch.stack(d_NLL)
-    kernel_matrix, grad_kernel, _ = get_kernel(particle_tensor=theta)
+        loss_NLL_gradients_dict = dict(zip(w.keys(), loss_NLL_grads))
+        loss_NLL_gradients = dict2tensor(dict_obj=loss_NLL_gradients_dict)
+        distance_NLL.append(loss_NLL_gradients)
+    distance_NLL = torch.stack(distance_NLL)
+    kernel_matrix, grad_kernel, _ = get_kernel(particle_tensor=theta0)
 
-    q = theta - inner_lr*(torch.matmul(kernel_matrix, d_NLL) - grad_kernel)
-    # endregion
+    q = theta0 - inner_lr * (torch.matmul(kernel_matrix, distance_NLL) - grad_kernel)
 
-    # region 2nd updates
-    for _ in range(num_inner_updates):
-        d_NLL = []
+    # 2nd updates
+    for _ in range(num_inner_updates - 1):
+        distance_NLL = []
         for particle_id in range(num_particles):
-            w = get_weights_target_net(w_generated=q, row_id=particle_id, w_target_shape=w_shape)
-            y_pred_t = net.forward(x=x_t, w=w, p_dropout=p_dropout_base)
-            loss_NLL = loss_fn(y_pred_t, y_t)
+            w = get_weights_target_net(w_generated=q, row_id=particle_id, w_target_shape=weight_shape)
+            y_pred = net.forward(x=x, w=w)
+            loss_NLL = loss_fn(y_pred, y)
             
-            NLL_grads = torch.autograd.grad(
+            loss_NLL_grads = torch.autograd.grad(
                 outputs=loss_NLL,
                 inputs=w.values(),
                 create_graph=True
             )
-            NLL_gradients = dict(zip(w.keys(), NLL_grads))
-            NLL_gradients_tensor = dict2tensor(dict_obj=NLL_gradients)
-            d_NLL.append(NLL_gradients_tensor)
-        d_NLL = torch.stack(d_NLL)
-        kernel_matrix, grad_kernel, _ = get_kernel(particle_tensor=theta)
+            loss_NLL_gradients_dict = dict(zip(w.keys(), loss_NLL_grads))
+            loss_NLL_gradients = dict2tensor(dict_obj=loss_NLL_gradients_dict)
+            distance_NLL.append(loss_NLL_gradients)
+        distance_NLL = torch.stack(distance_NLL)
+        kernel_matrix, grad_kernel, _ = get_kernel(particle_tensor=q)
 
-        q = q - inner_lr*(torch.matmul(kernel_matrix, d_NLL) - grad_kernel)
-    # endregion
+        q = q - inner_lr * (torch.matmul(kernel_matrix, distance_NLL) - grad_kernel)
+    return q
 
-    # region validation
-    if y_v is None:
-        y_pred_v = []
-    else:
-        loss_NLL = 0
-    
-    for particle_id in range(num_particles):
-        w = get_weights_target_net(w_generated=q, row_id=particle_id, w_target_shape=w_shape)
-        y_pred_ = net.forward(x=x_v, w=w, p_dropout=0)
-        if y_v is None:
-            y_pred_v.append(y_pred_)
+def predict(x, q):
+    y_pred = torch.empty(
+        size=(num_particles, num_val_samples_per_class * num_classes_per_task, num_classes_per_task),
+        device=device
+    )
+
+    for i in range(num_particles):
+        w = get_weights_target_net(
+            w_generated=q,
+            row_id=i,
+            w_target_shape=weight_shape
+        )
+        y_pred[i, :, :] = net.forward(x=x, w=w)
+    return y_pred
+
+# -------------------------------------------------------------------------------------------------
+# TEST
+# -------------------------------------------------------------------------------------------------
+def validate_regression(uncertainty_flag, num_val_tasks=1):
+    assert datasource == 'sine_line'
+
+    if uncertainty_flag:
+        from scipy.special import erf
+        quantiles = np.arange(start=0., stop=1.1, step=0.1)
+        filename = 'VAMPIRE_calibration_{0:s}_{1:d}shot_{2:d}.csv'.format(
+            datasource,
+            num_training_samples_per_class,
+            resume_epoch
+        )
+        outfile = open(file=os.path.join('csv', filename), mode='w')
+        wr = csv.writer(outfile, quoting=csv.QUOTE_NONE)
+    else: # visualization
+        from matplotlib import pyplot as plt
+        num_stds_plot = 2
+
+    data_generator = DataGenerator(num_samples=num_training_samples_per_class)
+    std = data_generator.noise_std
+
+    x0 = torch.linspace(start=-5, end=5, steps=100, device=device).view(-1, 1)
+
+    for _ in range(num_val_tasks):
+        # throw a coin to see 0 - 'sine' or 1 - 'line'
+        binary_flag = np.random.binomial(n=1, p=p_sine)
+        if (binary_flag == 0):
+            # generate sinusoidal data
+            x_t, y_t, amp, phase = data_generator.generate_sinusoidal_data(noise_flag=True)
+            y0 = amp * np.sin(x0 + phase)
         else:
-            loss_NLL += loss_fn(y_pred_, y_v)
-    
-    if y_v is None:
-        return y_pred_v
-    else:
-        loss_NLL /= num_particles
-        return loss_NLL
-    # endregion
+            # generate line data
+            x_t, y_t, slope, intercept = data_generator.generate_line_data(noise_flag=True)
+            y0 = slope * x0 + intercept
+        
+        x_t = torch.tensor(x_t, dtype=torch.float, device=device)
+        y_t = torch.tensor(y_t, dtype=torch.float, device=device)
+        y0 = y0.numpy().reshape(shape=(1, -1))
 
-def meta_validation(datasubset, num_val_tasks, return_uncertainty=False):
-    if datasource == 'sine_line':
-        x0 = torch.linspace(start=-5, end=5, steps=100, device=device).view(-1, 1) # vector
+        q = adapt_to_task(x=x_t, y=y_t, theta0=theta)
+        y_pred = predict(x=x0, q=q)
+        y_pred = torch.squeeze(y_pred, dim=-1).detach().cpu().numpy() # convert to numpy array Lv x len(x0)
 
-        if num_val_tasks == 0:
-            from matplotlib import pyplot as plt
-            import matplotlib
-            matplotlib.rcParams['xtick.labelsize'] = 16
-            matplotlib.rcParams['ytick.labelsize'] = 16
-            matplotlib.rcParams['axes.labelsize'] = 18
+        if uncertainty_flag:
+            # each column in y_pred represents a distribution for that x0-value at that column
+            # hence, we calculate the quantile along axis 0
+            y_preds_quantile = np.quantile(a=y_pred, q=quantiles, axis=0, keepdims=False)
 
-            num_stds = 2
-            data_generator = DataGenerator(
-                num_samples=num_training_samples_per_class,
-                device=device
-            )
-            if datasubset == 'sine':
-                x_t, y_t, amp, phase = data_generator.generate_sinusoidal_data(noise_flag=True)
-                y0 = amp*torch.sin(x0 + phase)
-            else:
-                x_t, y_t, slope, intercept = data_generator.generate_line_data(noise_flag=True)
-                y0 = slope*x0 + intercept
+            # ground truth cdf
+            cal_temp = (1 + erf((y_preds_quantile - y0)/(np.sqrt(2) * std)))/2
+            cal_temp_avg = np.mean(a=cal_temp, axis=1) # average for a task
+            wr.writerow(cal_temp_avg)
+        else:
+            y_mean = np.mean(a=y_pred, axis=0)
+            y_std = np.std(a=y_pred, axis=0)
+            y_top = y_mean + num_stds_plot * y_std
+            y_bottom = y_mean - num_stds_plot * y_std
 
-            y_preds = get_task_prediction(x_t=x_t, y_t=y_t, x_v=x0)
+            plt.figure(figsize=(4, 4))
 
-            '''LOAD MAML DATA'''
-            maml_folder = '{0:s}/MAML_mixed_sine_line'.format(dst_folder_root)
-            maml_filename = 'MAML_mixed_{0:d}shot_{1:s}.pt'.format(num_training_samples_per_class, '{0:d}')
-
-            i = 1
-            maml_checkpoint_filename = os.path.join(maml_folder, maml_filename.format(i))
-            while(os.path.exists(maml_checkpoint_filename)):
-                i = i + 1
-                maml_checkpoint_filename = os.path.join(maml_folder, maml_filename.format(i))
-            print(maml_checkpoint_filename)
-            maml_checkpoint = torch.load(
-                os.path.join(maml_folder, maml_filename.format(i - 1)),
-                map_location=lambda storage,
-                loc: storage.cuda(gpu_id)
-            )
-            theta_maml = maml_checkpoint['theta']
-            y_pred_maml = get_task_prediction_maml(x_t=x_t, y_t=y_t, x_v=x0, meta_params=theta_maml)
-
-            '''PLOT'''
-            _, ax = plt.subplots(figsize=(5, 5))
-            y_top = torch.squeeze(torch.mean(y_preds, dim=0) + num_stds*torch.std(y_preds, dim=0))
-            y_bottom = torch.squeeze(torch.mean(y_preds, dim=0) - num_stds*torch.std(y_preds, dim=0))
-
-            ax.fill_between(
+            plt.scatter(x_t.numpy(), y_t.numpy(), marker='^', label='Training data')
+            plt.fill_between(
                 x=torch.squeeze(x0).cpu().numpy(),
                 y1=y_bottom.cpu().detach().numpy(),
                 y2=y_top.cpu().detach().numpy(),
                 alpha=0.25,
-                color='C3',
                 zorder=0,
-                label='VAMPIRE'
+                label='Prediction'
             )
-            ax.plot(x0.cpu().numpy(), y0.cpu().numpy(), color='C7', linestyle='-', linewidth=3, zorder=1, label='Ground truth')
-            ax.plot(x0.cpu().numpy(), y_pred_maml.cpu().detach().numpy(), color='C2', linestyle='--', linewidth=3, zorder=2, label='MAML')
-            ax.scatter(x=x_t.cpu().numpy(), y=y_t.cpu().numpy(), color='C0', marker='^', s=300, zorder=3, label='Data')
-            plt.xticks([-5, -2.5, 0, 2.5, 5])
-            plt.savefig(fname='img/mixed_sine_temp.svg', format='svg')
-            return 0
-        else:
-            from scipy.special import erf
+            plt.plot(x0, y0, linewidth=1, linestyle='--', label='Ground-truth')
+            plt.xlabel('x')
+            plt.ylabel('y')
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+    if uncertainty_flag:
+        outfile.close()
+        print('Reliability data is stored at {0:s}'.format(os.path.join('csv', filename)))
 
-            quantiles = np.arange(start=0., stop=1.1, step=0.1)
-            cal_data = []
-
-            data_generator = DataGenerator(num_samples=num_training_samples_per_class, device=device)
-            for _ in range(num_val_tasks):
-                binary_flag = np.random.binomial(n=1, p=p_sine)
-                if (binary_flag == 0):
-                    # generate sinusoidal data
-                    x_t, y_t, amp, phase = data_generator.generate_sinusoidal_data(noise_flag=True)
-                    y0 = amp*torch.sin(x0 + phase)
-                else:
-                    # generate line data
-                    x_t, y_t, slope, intercept = data_generator.generate_line_data(noise_flag=True)
-                    y0 = slope*x0 + intercept
-                y0 = y0.view(1, -1).cpu().numpy() # row vector
-                
-                y_preds = torch.stack(get_task_prediction(x_t=x_t, y_t=y_t, x_v=x0)) # K x len(x0)
-
-                y_preds_np = torch.squeeze(y_preds, dim=-1).detach().cpu().numpy()
-                
-                y_preds_quantile = np.quantile(a=y_preds_np, q=quantiles, axis=0, keepdims=False)
-
-                # ground truth cdf
-                std = data_generator.noise_std
-                cal_temp = (1 + erf((y_preds_quantile - y0)/(np.sqrt(2)*std)))/2
-                cal_temp_avg = np.mean(a=cal_temp, axis=1) # average for a task
-                cal_data.append(cal_temp_avg)
-            return cal_data
+def validate_classification(
+    all_classes,
+    all_data,
+    num_val_tasks,
+    rand_flag=False,
+    uncertainty=False,
+    csv_flag=False
+):
+    if csv_flag:
+        filename = 'VAMPIRE_{0:s}_{1:d}way_{2:d}shot_{3:s}_{4:d}.csv'.format(
+            datasource,
+            num_classes_per_task,
+            num_training_samples_per_class,
+            'uncertainty' if uncertainty else 'accuracy',
+            resume_epoch
+        )
+        outfile = open(file=os.path.join('csv', filename), mode='w')
+        wr = csv.writer(outfile, quoting=csv.QUOTE_NONE)
     else:
         accuracies = []
-        corrects = []
-        probability_pred = []
+    
+    total_val_samples_per_task = num_val_samples_per_class * num_classes_per_task
+    all_class_names = [class_name for class_name in sorted(all_classes.keys())]
+    all_task_names = itertools.combinations(all_class_names, r=num_classes_per_task)
 
-        total_validation_samples = (num_total_samples_per_class - num_training_samples_per_class)*num_classes_per_task
+    task_count = 0
+    for class_labels in all_task_names:
+        if rand_flag:
+            skip_task = np.random.binomial(n=1, p=0.5) # sample from an uniform Bernoulli distribution
+            if skip_task == 1:
+                continue
         
-        if datasubset == 'train':
-            all_class_data = all_class_train
-            embedding_data = embedding_train
-        elif datasubset == 'val':
-            all_class_data = all_class_val
-            embedding_data = embedding_val
-        elif datasubset == 'test':
-            all_class_data = all_class_test
-            embedding_data = embedding_test
+        x_t, y_t, x_v, y_v = get_train_val_task_data(
+            all_classes=all_classes,
+            all_data=all_data,
+            class_labels=class_labels,
+            num_samples_per_class=num_samples_per_class,
+            num_training_samples_per_class=num_training_samples_per_class,
+            device=device
+        )
+
+        q = adapt_to_task(x=x_t, y=y_t, theta0=theta)
+        raw_scores = predict(x=x_v, q=q)
+        sm_scores = sm(input=raw_scores)
+        sm_scores_avg = torch.mean(sm_scores, dim=0)
+        
+        prob, y_pred = torch.max(input=sm_scores_avg, dim=1)
+        correct = [1 if y_pred[i] == y_v[i] else 0 for i in range(total_val_samples_per_task)]
+
+        accuracy = np.mean(a=correct, axis=0)
+        
+        if csv_flag:
+            if not uncertainty:
+                outline = [class_label for class_label in class_labels]
+                outline.append(accuracy)
+                wr.writerow(outline)
+            else:
+                for correct_, prob_ in zip(correct, prob):
+                    outline = [correct_, prob_]
+                    wr.writerow(outline)
         else:
-            sys.exit('Unknown datasubset for validation')
-        
-        all_class_names = list(all_class_data.keys())
-        all_task_names = itertools.combinations(all_class_names, r=num_classes_per_task)
-
-        if train_flag:
-            all_task_names = list(all_task_names)
-            random.shuffle(all_task_names)
-
-        task_count = 0
-        for class_labels in all_task_names:
-            x_t, y_t, x_v, y_v = get_task_image_data(
-                all_class_data,
-                embedding_data,
-                class_labels,
-                num_total_samples_per_class,
-                num_training_samples_per_class,
-                device)
-            
-            y_pred_v = get_task_prediction(x_t, y_t, x_v, y_v=None)
-            y_pred_v = torch.stack(y_pred_v)
-            y_pred_v = sm_loss(y_pred_v)
-            y_pred = torch.mean(input=y_pred_v, dim=0, keepdim=False)
-
-            prob_pred, labels_pred = torch.max(input=y_pred, dim=1)
-            correct = (labels_pred == y_v)
-            corrects.extend(correct.detach().cpu().numpy())
-
-            accuracy = torch.sum(correct, dim=0).item()/total_validation_samples
             accuracies.append(accuracy)
 
-            probability_pred.extend(prob_pred.detach().cpu().numpy())
-
-            task_count += 1
-            if not train_flag:
-                print(task_count)
-            if (task_count >= num_val_tasks):
-                break
-        if not return_uncertainty:
-            return accuracies, all_task_names
-        else:
-            return corrects, probability_pred
-
+        task_count = task_count + 1
+        if not train_flag:
+            sys.stdout.write('\033[F')
+            print(task_count)
+        if task_count >= num_val_tasks:
+            break
+    if csv_flag:
+        outfile.close()
+        return None
+    else:
+        return accuracies
 
 def get_kernel(particle_tensor):
     '''
@@ -710,6 +700,23 @@ def dict2tensor(dict_obj):
         d2tensor.append(tensor_temp)
     d2tensor = torch.cat(d2tensor)
     return d2tensor
+
+def get_weights_target_net(w_generated, row_id, w_target_shape):
+    w = {}
+    if type(w_generated) is torch.Tensor:
+        temp = 0
+        for key in w_target_shape.keys():
+            w_temp = w_generated[row_id, temp:(temp + np.prod(w_target_shape[key]))]
+            if 'b' in key:
+                w[key] = w_temp
+            else:
+                w[key] = w_temp.view(w_target_shape[key])
+            temp += np.prod(w_target_shape[key])
+    elif type(w_generated) is dict:
+        for key in w_generated.keys():
+            w[key] = w_generated[key][row_id]
+
+    return w
 
 if __name__ == "__main__":
     main()

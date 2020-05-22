@@ -3,13 +3,14 @@ import collections
 import numpy as np
 
 class FC640(torch.nn.Module):
-    def __init__(self, dim_output, num_hidden_units, device):
+    def __init__(self, num_hidden_units, dim_output=None, device=torch.device('cpu')):
         super(FC640, self).__init__()
         self.dim_output = dim_output
         self.dim_input = 640
         self.device = device
 
         self.num_hidden_units = num_hidden_units
+        self.num_layers = len(num_hidden_units)
 
         self.bn = {}
         for i, num_hidden_unit in enumerate(num_hidden_units):
@@ -26,15 +27,16 @@ class FC640(torch.nn.Module):
         num_hidden_units = [self.dim_input]
         num_hidden_units.extend(self.num_hidden_units)
 
-        for i in range(len(self.num_hidden_units)):
+        for i in range(self.num_layers):
             w_shape['w{0:d}'.format(i + 1)] = (num_hidden_units[i + 1], num_hidden_units[i])
             w_shape['b{0:d}'.format(i + 1)] = num_hidden_units[i + 1]
 
-        w_shape['w{0:d}'.format(len(self.num_hidden_units) + 1)] = (self.dim_output, self.num_hidden_units[-1])
-        w_shape['b{0:d}'.format(len(self.num_hidden_units) + 1)] = self.dim_output
+        if self.dim_output is not None:
+            w_shape['w{0:d}'.format(self.num_layers + 1)] = (self.dim_output, self.num_hidden_units[-1])
+            w_shape['b{0:d}'.format(self.num_layers + 1)] = self.dim_output
         return w_shape
 
-    def initialise_weights(self):
+    def initialize_weights(self):
         w = {}
 
         # w['w1'] = torch.empty((self.dim_output, self.dim_input), device=self.device)
@@ -55,8 +57,8 @@ class FC640(torch.nn.Module):
 
     def forward(self, x, w, p_dropout=0):
         out = torch.nn.functional.dropout(input=x, p=p_dropout)
-        # out = x
-        for i in range(len(self.num_hidden_units)):
+        
+        for i in range(self.num_layers - 1):
             out = torch.nn.functional.linear(
                 input=out,
                 weight=w['w{0:d}'.format(i + 1)],
@@ -64,12 +66,20 @@ class FC640(torch.nn.Module):
             )
             out = self.bn[i](out)
             out = torch.nn.functional.relu(out)
-        # out = torch.nn.functional.leaky_relu(input=out, negative_slope=0.1)
-
-        # out = torch.nn.functional.dropout(input=out, p=p_dropout)
+        
         out = torch.nn.functional.linear(
             input=out,
-            weight=w['w{0:d}'.format(len(self.num_hidden_units) + 1)],
-            bias=w['b{0:d}'.format(len(self.num_hidden_units) + 1)]
+            weight=w['w{0:d}'.format(self.num_layers)],
+            bias=w['b{0:d}'.format(self.num_layers)]
         )
+            
+        if self.dim_output is not None:
+            out = self.bn[self.num_layers - 1](out)
+            out = torch.nn.functional.relu(out)
+
+            out = torch.nn.functional.linear(
+                input=out,
+                weight=w['w{0:d}'.format(self.num_layers + 1)],
+                bias=w['b{0:d}'.format(self.num_layers + 1)]
+            )
         return out

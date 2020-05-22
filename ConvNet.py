@@ -82,7 +82,7 @@ class ConvNet(torch.nn.Module):
         
         return w_shape
 
-    def initialise_weights(self):
+    def initialize_weights(self):
         w = {}
         w_shape = self.get_weight_shape()
         for key in w_shape.keys():

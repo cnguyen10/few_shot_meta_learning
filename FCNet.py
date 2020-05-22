@@ -32,7 +32,7 @@ class FCNet(torch.nn.Module):
 
         return weight_shape
     
-    def initialise_weights(self):
+    def initialize_weights(self):
         w = {}
         weight_shape = self.get_weight_shape()
         for key in weight_shape.keys():
