@@ -513,8 +513,8 @@ def adapt_to_task(x, y, theta0):
         loss_NLL_gradients_logSigma = dict(zip(q['logSigma'].keys(), loss_NLL_grads_logSigma))
 
         for key in w.keys():
-            loss_KL_grad_mean = -torch.exp(-2 * theta['logSigma'][key]) * (theta['mean'][key] - q['mean'][key])
-            loss_KL_grad_logSigma = torch.exp(2 * (q['logSigma'][key] - theta['logSigma'][key])) - 1
+            loss_KL_grad_mean = -torch.exp(-2 * theta0['logSigma'][key]) * (theta0['mean'][key] - q['mean'][key])
+            loss_KL_grad_logSigma = torch.exp(2 * (q['logSigma'][key] - theta0['logSigma'][key])) - 1
             
             q['mean'][key] = q['mean'][key] - inner_lr * (loss_NLL_gradients_mean[key] + KL_reweight * loss_KL_grad_mean)
             q['logSigma'][key] = q['logSigma'][key] - inner_lr * (loss_NLL_gradients_logSigma[key] \
