@@ -1,11 +1,10 @@
 """
-python3 maml.py --datasource=omniglot-py --ds-folder=/home/n10/Dropbox/ML/datasets --logdir=/media/n10/Data/ --n-way=5 --k-shot=1 --v-shot=15 --inner-lr=1e-2 --num-inner-updates=5 --meta-lr=1e-3 --minibatch=25 --decay-lr=0.9 --num-epochs=10 --resume-epoch=0
+python3 maml_regression.py --k-shot=5 --inner-lr=1e-2 --num-inner-updates=5 --meta-lr=1e-3 --minibatch=100 --decay-lr=0.9 --num-epochs=1 --resume-epoch=0
 
-python3 maml.py --datasource=omniglot-py --ds-folder=/home/n10/Dropbox/ML/datasets --logdir=/media/n10/Data/ --n-way=5 --k-shot=1 --v-shot=15 --inner-lr=1e-2 --num-inner-updates=5 --resume-epoch=1 --test --num-episodes=10
+python3 maml_regression.py --k-shot=5 --inner-lr=1e-2 --num-inner-updates=5 --resume-epoch=1 --test --sine
 """
 
 import torch
-import torchvision
 from torch.utils.tensorboard import SummaryWriter
 import higher
 
@@ -13,13 +12,13 @@ import numpy as np
 import os
 import random
 import sys
-import itertools
 
-import csv
+from matplotlib import pyplot as plt
 
 import argparse
 import typing as _typing
 
+from EpisodeGenerator import SineLineGenerator
 from _utils import train_val_split
 
 # --------------------------------------------------
@@ -27,23 +26,19 @@ from _utils import train_val_split
 # --------------------------------------------------
 parser = argparse.ArgumentParser(description='Setup variables')
 
-parser.add_argument('--datasource', type=str, default='omniglot', help='Dataset: omniglot, ImageNet')
 parser.add_argument('--first-order', type=bool, default=True, help='First order or track higher gradients')
-
-parser.add_argument('--n-way', type=int, default=5, help='Number of classes of an episode')
 
 parser.add_argument('--num-inner-updates', type=int, default=5, help='The number of gradient updates for episode adaptation')
 parser.add_argument('--inner-lr', type=float, default=1e-2, help='Learning rate of episode adaptation step')
 
-parser.add_argument('--ds-folder', type=str, default='./datasets', help='Folder to store model and logs')
 parser.add_argument('--logdir', type=str, default='/media/n10/Data/', help='Folder to store model and logs')
 
 parser.add_argument('--meta-lr', type=float, default=1e-3, help='Learning rate for meta-update')
 parser.add_argument('--minibatch', type=int, default=5, help='Minibatch of episodes to update meta-parameters')
 parser.add_argument('--decay-lr', type=float, default=1., help='Factor to decay meta learning rate')
 
-parser.add_argument('--k-shot', type=int, default=1, help='Number of training examples per class')
-parser.add_argument('--v-shot', type=int, default=15, help='Number of validation examples per class')
+parser.add_argument('--k-shot', type=int, default=5, help='Number of training examples per class')
+parser.add_argument('--v-shot', type=int, default=95, help='Number of validation examples per class')
 
 parser.add_argument('--num-episodes-per-epoch', type=int, default=10000, help='Save meta-parameters after this number of episodes')
 parser.add_argument('--num-epochs', type=int, default=1, help='')
@@ -53,8 +48,9 @@ parser.add_argument('--train', dest='train_flag', action='store_true')
 parser.add_argument('--test', dest='train_flag', action='store_false')
 parser.set_defaults(train_flag=True)
 
-parser.add_argument('--num-episodes', type=int, default=100, help='Number of episodes used in testing')
-parser.add_argument('--episode-file', type=str, default=None, help='Path to csv file: row = episode, columns = list of classes within the episode')
+parser.add_argument('--sine', dest='mode', action='store_true')
+parser.add_argument('--line', dest='mode', action='store_false')
+parser.set_defaults(mode=True)
 
 args = parser.parse_args()
 print()
@@ -68,8 +64,7 @@ device = torch.device('cuda:{0:d}'.format(gpu_id) \
 # --------------------------------------------------
 # parse parameters
 # --------------------------------------------------
-datasource = args.datasource
-logdir = os.path.join(args.logdir, 'MAML', datasource)
+logdir = os.path.join(args.logdir, 'MAML', 'sine_line')
 if not os.path.exists(logdir):
     os.makedirs(logdir)
 
@@ -83,41 +78,13 @@ inner_lr = args.inner_lr
 
 resume_epoch = args.resume_epoch
 
-n_way = args.n_way
-
 first_order = args.first_order
 
-ds_folder = os.path.join(args.ds_folder, datasource)
+mode_ = 'sine' if args.mode else 'line'
 # --------------------------------------------------
 # Data loader
 # --------------------------------------------------
-if datasource in ['omniglot-py']:
-    from EpisodeGenerator import OmniglotLoader
-    eps_generator = OmniglotLoader(
-        root=ds_folder,
-        images_background=train_flag,
-        max_num_cls=n_way,
-        min_num_cls=n_way,
-        k_shot=k_shot + v_shot,
-        expand_dim=False,
-        load_images=True
-    )
-    nc = 1
-elif datasource in ['miniImageNet']:
-    from EpisodeGenerator import ImageFolderGenerator
-    eps_generator = ImageFolderGenerator(
-        root=ds_folder,
-        train_subset=train_flag,
-        suffix='.jpg',
-        min_num_cls=n_way,
-        max_num_cls=n_way,
-        k_shot=k_shot + v_shot,
-        expand_dim=False,
-        load_images=True
-    )
-    nc = 3
-else:
-    raise ValueError('Unknown dataset')
+eps_generator = SineLineGenerator(num_samples=k_shot + v_shot)
 
 # --------------------------------------------------
 # MAIN
@@ -126,11 +93,7 @@ def main():
     if train_flag:
         train()
     else:
-        acc = evaluate()
-        mean = np.mean(a=acc)
-        std = np.std(a=acc)
-        n = len(acc)
-        print('Accuracy = {0:.4f} +/- {1:.4f}'.format(mean, 1.96 * std / np.sqrt(n)))
+        evaluate()
 
 # --------------------------------------------------
 # TRAIN
@@ -142,7 +105,6 @@ def train() -> None:
 
     Returns:
     """
-
     try:
         # parse training parameters
         meta_lr = args.meta_lr
@@ -153,16 +115,11 @@ def train() -> None:
         num_episodes_per_epoch = args.num_episodes_per_epoch
         num_epochs = args.num_epochs
 
-        episode_file = args.episode_file
-
         # initialize/load model
         net, meta_optimizer, schdlr = load_model(epoch_id=resume_epoch, meta_lr=meta_lr, decay_lr=decay_lr)
         
         # zero grad
         meta_optimizer.zero_grad()
-
-        # get episode list if not None -> generator of episode names, each episode name consists of classes
-        episodes = get_episodes(episode_file_path=episode_file, num_episodes=None)
 
         # initialize a tensorboard summary writer for logging
         tb_writer = SummaryWriter(
@@ -175,36 +132,26 @@ def train() -> None:
             loss_monitor = 0
             
             while (episode_count < num_episodes_per_epoch):
-                # get episode from the given csv file, or just return None
-                try:
-                    episode_ = next(episodes)
-                except StopIteration:
-                    # if running out of episodes from the csv file, reset episode generator
-                    episodes = get_episodes(episode_file_path=episode_file)
-                finally:
-                    episode_ = next(episodes)
-
-                # randomly skip episode <=> shuffle episodes
-                if random.random() < 0.5:
-                    continue
-
-                X = eps_generator.generate_episode(episode_name=episode_)
+                x, y_noisy, _ = eps_generator.generate_episode()
                 
                 # split into train and validation
-                xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
+                xt = x[:k_shot]
+                yt = y_noisy[:k_shot]
+                xv = x[k_shot:]
+                yv = y_noisy[k_shot:]
 
                 # move data to gpu
                 x_t = torch.from_numpy(xt).float().to(device)
-                y_t = torch.tensor(yt, dtype=torch.long, device=device)
+                y_t = torch.from_numpy(yt).float().to(device)
                 x_v = torch.from_numpy(xv).float().to(device)
-                y_v = torch.tensor(yv, dtype=torch.long, device=device)
+                y_v = torch.from_numpy(yv).float().to(device)
 
                 # adapt on the support data
                 fnet = adapt_to_episode(x=x_t, y=y_t, net=net)
 
                 # evaluate on the query data
                 logits_v = fnet.forward(x_v)
-                cls_loss = torch.nn.functional.cross_entropy(input=logits_v, target=y_v)
+                cls_loss = torch.nn.functional.mse_loss(input=logits_v, target=y_v)
                 loss_monitor += cls_loss.item()
 
                 cls_loss = cls_loss / minibatch
@@ -253,50 +200,48 @@ def train() -> None:
 # --------------------------------------------------
 # EVALUATION
 # --------------------------------------------------
-def evaluate() -> _typing.List[float]:
+def evaluate() -> None:
     assert resume_epoch > 0
-
-    episode_file = args.episode_file
-    if episode_file is None:
-        num_episodes = args.num_episodes
-    else:
-        num_episodes = None
-
-    acc = []
-
-    if (num_episodes is None) and (episode_file is None):
-        raise ValueError('Expect exactly one of num_episodes and episode_file to be not None, receive both are None.')
 
     # load model
     net, _, _ = load_model(epoch_id=resume_epoch)
-    episodes = get_episodes(episode_file_path=episode_file, num_episodes=num_episodes)
-    for i, episode_ in enumerate(episodes):
-        X = eps_generator.generate_episode(episode_name=episode_)
-                
-        # split into train and validation
-        xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
 
-        # move data to gpu
-        x_t = torch.from_numpy(xt).float().to(device)
-        y_t = torch.tensor(yt, dtype=torch.long, device=device)
-        x_v = torch.from_numpy(xv).float().to(device)
-        y_v = torch.tensor(yv, dtype=torch.long, device=device)
+    x, y_noisy, y0 = eps_generator.generate_episode(episode_name=mode_)
+            
+    # split into train and validation
+    xt = x[:k_shot]
+    yt = y_noisy[:k_shot]
+    xv = np.linspace(
+        start=eps_generator.input_range[0],
+        stop=eps_generator.input_range[1],
+        num=k_shot + v_shot
+    )
+    xv = xv[:, np.newaxis]
 
-        # adapt on the support data
-        fnet = adapt_to_episode(x=x_t, y=y_t, net=net)
+    # move data to gpu
+    x_t = torch.from_numpy(xt).float().to(device)
+    y_t = torch.from_numpy(yt).float().to(device)
+    x_v = torch.from_numpy(xv).float().to(device)
 
-        # evaluate on the query data
-        logits_v = fnet(x_v)
-        episode_acc = (logits_v.argmax(dim=1) == y_v).sum().item() / (eps_generator.k_shot * len(X))
+    # adapt on the support data
+    fnet = adapt_to_episode(x=x_t, y=y_t, net=net)
 
-        acc.append(episode_acc)
+    # evaluate on the query data
+    y_logits = fnet.forward(x_v)
 
-        sys.stdout.write('\033[F')
-        print(i)
-    
-    return acc
+    plt.figure(figsize=(4, 4))
+    plt.plot(eps_generator.x0, y0, linewidth=1, linestyle='--', color='C0', label='ground-truth')
+    plt.plot(xv, y_logits.detach().cpu().numpy(), linewidth=1, color='C1', label='predict')
+    plt.scatter(x=xt, y=yt, c='C2', marker='^', label='data')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.savefig(fname=os.path.join(logdir, 'regression.eps'), format='eps')
+    plt.show()
 
-    
+    return None
+
 # --------------------------------------------------
 # Auxilliary
 # --------------------------------------------------
@@ -306,7 +251,7 @@ def adapt_to_episode(x: torch.Tensor, y: torch.Tensor, net: torch.nn.Module) -> 
     Args:
       x, y: training data and label
       net: the base network
-    
+
     Return: a MonkeyPatch module
     """
     fnet = higher.patch.monkeypatch(
@@ -317,7 +262,7 @@ def adapt_to_episode(x: torch.Tensor, y: torch.Tensor, net: torch.nn.Module) -> 
 
     for _ in range(num_inner_updates):
         y_logits = fnet.forward(x)
-        cls_loss = torch.nn.functional.cross_entropy(input=y_logits, target=y)
+        cls_loss = torch.nn.functional.mse_loss(input=y_logits, target=y)
 
         params = fnet.fast_params # list of parameters/tensors
 
@@ -342,32 +287,6 @@ def adapt_to_episode(x: torch.Tensor, y: torch.Tensor, net: torch.nn.Module) -> 
 
     return fnet
 
-def get_episodes(
-    episode_file_path: _typing.Optional[str] = None,
-    num_episodes: _typing.Optional[int] = None
-) -> _typing.Generator:
-    """Get episodes from a file
-
-    Args:
-        episode_file_path:
-        num_episodes: dummy variable in training to create an infinite
-            episode (str) generator. In testing, it defines how many
-            episodes to evaluate
-
-    Return: an episode (str) generator
-    """
-    # get episode list if not None
-    if episode_file_path is not None:
-        with open(file=episode_file_path, mode='r') as f_csv:
-            csv_rd = csv.reader(f_csv, delimiter=',')
-            episodes = (row for row in csv_rd) # generator from list
-    elif num_episodes is not None:
-        episodes = itertools.repeat(None, times=num_episodes)
-    else:
-        episodes = itertools.repeat(None)
-    
-    return episodes
-
 def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> _typing.Tuple[torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
     """Initialize the model, optimizer and lr_scheduler
     The example here is to load ResNet18. You can write
@@ -383,51 +302,7 @@ def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> 
         schdlr:
     """
     # define a neural network
-    net = torchvision.models.resnet18(pretrained=False)
-
-    # modify the resnet to suit the data
-    # change first conv2d from 7-by-7 kernel size to 3-by-3
-    net.conv1 = torch.nn.Conv2d(
-        in_channels=nc,
-        out_channels=64,
-        kernel_size=(3, 3),
-        stride=(2, 2),
-        padding=(3, 3),
-        bias=False
-    )
-
-    # update batch norm for meta-learning by setting momentum to 1
-    net.bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-
-    net.layer1[0].bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-    net.layer1[0].bn2 = torch.nn.BatchNorm2d(64, momentum=1)
-
-    net.layer1[1].bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-    net.layer1[1].bn2 = torch.nn.BatchNorm2d(64, momentum=1)
-
-    net.layer2[0].bn1 = torch.nn.BatchNorm2d(128, momentum=1)
-    net.layer2[0].bn2 = torch.nn.BatchNorm2d(128, momentum=1)
-    net.layer2[0].downsample[1] = torch.nn.BatchNorm2d(128, momentum=1)
-
-    net.layer2[1].bn1 = torch.nn.BatchNorm2d(128, momentum=1)
-    net.layer2[1].bn2 = torch.nn.BatchNorm2d(128, momentum=1)
-
-    net.layer3[0].bn1 = torch.nn.BatchNorm2d(256, momentum=1)
-    net.layer3[0].bn2 = torch.nn.BatchNorm2d(256, momentum=1)
-    net.layer3[0].downsample[1] = torch.nn.BatchNorm2d(256, momentum=1)
-
-    net.layer3[1].bn1 = torch.nn.BatchNorm2d(256, momentum=1)
-    net.layer3[1].bn2 = torch.nn.BatchNorm2d(256, momentum=1)
-
-    net.layer4[0].bn1 = torch.nn.BatchNorm2d(512, momentum=1)
-    net.layer4[0].bn2 = torch.nn.BatchNorm2d(512, momentum=1)
-    net.layer4[0].downsample[1] = torch.nn.BatchNorm2d(512, momentum=1)
-
-    net.layer4[1].bn1 = torch.nn.BatchNorm2d(512, momentum=1)
-    net.layer4[1].bn2 = torch.nn.BatchNorm2d(512, momentum=1)
-
-    # remove last fc layer
-    net.fc = torch.nn.Linear(in_features=512, out_features=n_way)
+    net = FC_Net(num_units=32)
 
     # initialize
     net.apply(weights_init)
@@ -505,8 +380,37 @@ def weights_init(m):
         torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
         torch.nn.init.constant_(m.bias.data, 0)
 
-# --------------------------------------------------
-# 
-# --------------------------------------------------
+class FC_Net(torch.nn.Module):
+    """Simple fully connected network
+    """
+    def __init__(self, num_units: int = 32) -> None:
+        """Initialize a 2-hidden-layer instance
+
+        Args: num_units: number of hidden units in each hidden layer
+        """
+        super(FC_Net, self).__init__()
+        self.num_units = num_units
+
+        self.main = torch.nn.Sequential(
+            torch.nn.Linear(in_features=1, out_features=num_units),
+            # torch.nn.BatchNorm1d(num_features=num_units),
+            torch.nn.ReLU(),
+
+            torch.nn.Linear(in_features=num_units, out_features=num_units),
+            # torch.nn.BatchNorm1d(num_features=num_units),
+            torch.nn.ReLU(),
+
+            torch.nn.Linear(in_features=num_units, out_features=num_units),
+            # torch.nn.BatchNorm1d(num_features=num_units),
+            torch.nn.ReLU(),
+
+            torch.nn.Linear(in_features=num_units, out_features=1)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward
+        """
+        return self.main(x)
+
 if __name__ == '__main__':
     main()
