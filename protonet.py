@@ -1,474 +1,441 @@
-'''
-python3 protonet.py --datasource=omniglot --n_way=5 --k_shot=1 --minibatch=20 --train --num_epochs=100 --lr_decay=0.99
+"""
+python3 protonet2.py --datasource=omniglot-py --ds-folder=/home/n10/Dropbox/ML/datasets --logdir=/media/n10/Data/ --k-shot=1 --v-shot=15 --meta-lr=1e-3 --minibatch=25 --decay-lr=0.9 --num-epochs=1 --resume-epoch=0
+"""
 
-python3 protonet.py --datasource=omniglot --n_way=5 --k_shot=1 --num_val_shots=19 --resume_epoch=100 --test --no_uncertainty --num_val_tasks=100000
-
-python3 protonet.py --datasource=miniImageNet --n_way=5 --k_shot=1 --minibatch=10 --train --num_epochs=100 --lr_decay=0.99
-python3 protonet.py --datasource=miniImageNet --n_way=5 --k_shot=1 --resume_epoch=100 --test --no_uncertainty --num_val_tasks=600
-
-python3 protonet.py --datasource=miniImageNet_640 --n_way=5 --k_shot=1 --minibatch=100 --train --num_epochs=100 --lr_decay=0.99
-'''
 import torch
+import torchvision
+from torch.utils.tensorboard import SummaryWriter
+import higher
 
 import numpy as np
+import os
 import random
+import sys
 import itertools
 
-import os
-import sys
+import csv
 
 import argparse
+import typing as _typing
 
-from utils import load_dataset, get_train_val_task_data, initialize_dataloader
+from CommonModels import ConvNet, ResNet18
+from _utils import train_val_split, _weights_init, euclidean_distance
 
-# -------------------------------------------------------------------------------------------------
-# Setup input parser
-# -------------------------------------------------------------------------------------------------
-parser = argparse.ArgumentParser(description='Setup variables for the Prototypical Network.')
+# --------------------------------------------------
+# SETUP INPUT PARSER
+# --------------------------------------------------
+parser = argparse.ArgumentParser(description='Setup variables')
 
-parser.add_argument('--datasource', type=str, default='sine_line', help='Datasource: sine_line, omniglot, miniImageNet, miniImageNet_640')
-parser.add_argument('--n_way', type=int, default=5, help='Number of classes per task')
-parser.add_argument('--k_shot', type=int, default=1, help='Number of training samples per class or k-shot')
-parser.add_argument('--num_val_shots', type=int, default=15, help='Number of validation samples per class')
+parser.add_argument('--datasource', type=str, default='omniglot', help='Dataset: omniglot, ImageNet')
 
-parser.add_argument('--meta_lr', type=float, default=1e-3, help='Learning rate of meta-parameters')
+parser.add_argument('--ds-folder', type=str, default='./datasets', help='Folder to store model and logs')
+parser.add_argument('--logdir', type=str, default='/media/n10/Data/', help='Folder to store model and logs')
 
-parser.add_argument('--minibatch_size', type=int, default=25, help='Number of tasks per minibatch to update meta-parameters')
-parser.add_argument('--num_epochs', type=int, default=100, help='How many 10,000 tasks are used to continue to train?')
-parser.add_argument('--resume_epoch', type=int, default=0, help='Epoch id to resume learning or perform testing')
+parser.add_argument('--n-way', type=int, default=5, help='Number of classes of an episode')
 
-parser.add_argument('--lr_decay', type=float, default=1, help='Decay factor of meta-learning rate')
+parser.add_argument('--meta-lr', type=float, default=1e-3, help='Learning rate for meta-update')
+parser.add_argument('--minibatch', type=int, default=5, help='Minibatch of episodes to update meta-parameters')
+parser.add_argument('--decay-lr', type=float, default=1., help='Factor to decay meta learning rate')
+
+parser.add_argument('--k-shot', type=int, default=1, help='Number of training examples per class')
+parser.add_argument('--v-shot', type=int, default=15, help='Number of validation examples per class')
+
+parser.add_argument('--num-episodes-per-epoch', type=int, default=10000, help='Save meta-parameters after this number of episodes')
+parser.add_argument('--num-epochs', type=int, default=1, help='')
+parser.add_argument('--resume-epoch', type=int, default=0, help='Resume')
 
 parser.add_argument('--train', dest='train_flag', action='store_true')
 parser.add_argument('--test', dest='train_flag', action='store_false')
 parser.set_defaults(train_flag=True)
 
-parser.add_argument('--uncertainty', dest='uncertainty_flag', action='store_true')
-parser.add_argument('--no_uncertainty', dest='uncertainty_flag', action='store_false')
-parser.set_defaults(uncertainty_flag=True)
-
-parser.add_argument('--num_val_tasks', type=int, default=100, help='Number of validation tasks')
-parser.add_argument('--val_subset', type=str, default='test', help='Which subset will be tested')
+parser.add_argument('--num-episodes', type=int, default=100, help='Number of episodes used in testing')
+parser.add_argument('--episode-file', type=str, default=None, help='Path to csv file: row = episode, columns = list of classes within the episode')
 
 args = parser.parse_args()
-
-# -------------------------------------------------------------------------------------------------
+print()
+# --------------------------------------------------
 # Setup CPU or GPU
-# -------------------------------------------------------------------------------------------------
+# --------------------------------------------------
 gpu_id = 0
-device = torch.device('cuda:{0:d}'.format(gpu_id) if torch.cuda.is_available() else "cpu")
+device = torch.device('cuda:{0:d}'.format(gpu_id) \
+    if torch.cuda.is_available() else torch.device('cpu'))
 
-# -------------------------------------------------------------------------------------------------
-# Parse dataset and related variables
-# -------------------------------------------------------------------------------------------------
+# --------------------------------------------------
+# parse parameters
+# --------------------------------------------------
 datasource = args.datasource
-print('Dataset = {0:s}'.format(datasource))
+logdir = os.path.join(args.logdir, 'ProtoNet', datasource)
+if not os.path.exists(logdir):
+    os.makedirs(logdir)
+
+k_shot = args.k_shot
+v_shot = args.v_shot
 
 train_flag = args.train_flag
-print('Learning mode = {0}'.format(train_flag))
 
-num_classes_per_task = args.n_way
-print('Number of ways = {0:d}'.format(num_classes_per_task))
-
-num_training_samples_per_class = args.k_shot
-print('Number of shots = {0:d}'.format(num_training_samples_per_class))
-
-num_val_samples_per_class = args.num_val_shots
-print('Number of validation samples per class = {0:d}'.format(num_val_samples_per_class))
-
-num_samples_per_class = num_training_samples_per_class + num_val_samples_per_class
-
-train_set = 'train'
-val_set = 'val'
-test_set = 'test'
-val_subset = args.val_subset
-# -------------------------------------------------------------------------------------------------
-#   Setup based model/network
-# -------------------------------------------------------------------------------------------------
-loss_fn = torch.nn.CrossEntropyLoss()
-sm = torch.nn.Softmax(dim=1)
-
-if datasource in ['omniglot', 'miniImageNet']:
-    from ConvNet import ConvNet
-    DIM_INPUT = {
-        'omniglot': (1, 28, 28),
-        'miniImageNet': (3, 84, 84)
-    }
-
-    net = ConvNet(
-        dim_input=DIM_INPUT[datasource],
-        dim_output=None,
-        num_filters=(32, 32, 32, 32),
-        filter_size=(3, 3),
-        device=device
-    )
-
-elif datasource in ['miniImageNet_640', 'tieredImageNet_640']:
-    import pickle
-    from FC640 import FC640
-    net = FC640(
-        num_hidden_units=(128, 32),
-        dim_output=None,
-        device=device
-    )
-else:
-    sys.exit('Unknown dataset!')
-weight_shape = net.get_weight_shape()
-# -------------------------------------------------------------------------------------------------
-# Parse training parameters
-# -------------------------------------------------------------------------------------------------
-meta_lr = args.meta_lr
-print('Meta learning rate = {0}'.format(meta_lr))
-
-num_tasks_per_minibatch = args.minibatch_size
-print('Number of tasks per minibatch = {0:d}'.format(num_tasks_per_minibatch))
-
-num_meta_updates_print = int(1000/num_tasks_per_minibatch)
-
-num_epochs_save = 1
-
-expected_total_tasks_per_epoch = 10000
-num_tasks_per_epoch = int(expected_total_tasks_per_epoch/num_tasks_per_minibatch)*num_tasks_per_minibatch
-
-expected_tasks_save_loss = 10000
-num_tasks_save_loss = int(expected_tasks_save_loss/num_tasks_per_minibatch)*num_tasks_per_minibatch
-
-num_epochs = args.num_epochs
-
-num_val_tasks = args.num_val_tasks
-
-uncertainty_flag = args.uncertainty_flag
-
-# -------------------------------------------------------------------------------------------------
-# Setup destination folder
-# -------------------------------------------------------------------------------------------------
-dst_root_folder = './ProtoNet'
-dst_folder = '{0:s}/{1:s}_{2:d}way_{3:d}shot'.format(
-    dst_root_folder,
-    datasource,
-    num_classes_per_task,
-    num_training_samples_per_class
-)
-if not os.path.exists(dst_folder):
-    os.makedirs(dst_folder)
-
-# -------------------------------------------------------------------------------------------------
-# Intialize/Load meta-parameters
-# -------------------------------------------------------------------------------------------------
 resume_epoch = args.resume_epoch
-if resume_epoch == 0:
-    loss_meta_saved = [] # to monitor the meta-loss
-    loss_kl_saved = []
 
-    # initialise meta-parameters
-    theta = {}
-    for key in weight_shape.keys():
-        if 'b' not in key:
-            theta[key] = torch.empty(
-                weight_shape[key],
-                device=device
-            )
-            torch.nn.init.xavier_normal_(theta[key])
-            theta[key].requires_grad_()
-        else:
-            theta[key] = torch.randn(weight_shape[key], device=device, requires_grad=True)
+n_way = args.n_way
 
-else: # load meta-parameter
-    checkpoint_filename = ('Epoch_{0:d}.pt').format(resume_epoch)
-    checkpoint_file = os.path.join(dst_folder, checkpoint_filename)
-    print('Start to load weights from')
-    print('{0:s}'.format(checkpoint_file))
-    if torch.cuda.is_available():
-        saved_checkpoint = torch.load(checkpoint_file, map_location=lambda storage, loc: storage.cuda(gpu_id))
-    else:
-        saved_checkpoint = torch.load(checkpoint_file, map_location=lambda storage, loc: storage)
+ds_folder = os.path.join(args.ds_folder, datasource)
+# --------------------------------------------------
+# Data loader
+# --------------------------------------------------
+if datasource in ['omniglot-py']:
+    from EpisodeGenerator import OmniglotLoader
+    eps_generator = OmniglotLoader(
+        root=ds_folder,
+        images_background=train_flag,
+        max_num_cls=5 if n_way is None else n_way,
+        min_num_cls=20 if n_way is None else n_way,
+        k_shot=k_shot + v_shot,
+        expand_dim=False,
+        load_images=True
+    )
+    nc = 1
+elif datasource in ['miniImageNet']:
+    from EpisodeGenerator import ImageFolderGenerator
+    eps_generator = ImageFolderGenerator(
+        root=ds_folder,
+        train_subset=train_flag,
+        suffix='.jpg',
+        min_num_cls=n_way,
+        max_num_cls=n_way,
+        k_shot=k_shot + v_shot,
+        expand_dim=False,
+        load_images=True
+    )
+    nc = 3
+else:
+    raise ValueError('Unknown dataset')
 
-    theta = saved_checkpoint['theta']
-
-# intialize an optimizer for the meta-parameter
-op_theta = torch.optim.Adam(params=theta.values(), lr=meta_lr)
-
-# load the optimizer
-if resume_epoch > 0:
-    op_theta.load_state_dict(saved_checkpoint['op_theta'])
-    # op_theta.param_groups[0]['lr'] = meta_lr
-    del saved_checkpoint
-print(op_theta)
-
-# decay the learning rate
-scheduler = torch.optim.lr_scheduler.ExponentialLR(
-    optimizer=op_theta,
-    gamma=args.lr_decay)
-
-p_rand = None
-if train_flag == 'test':
-    uncertainty_flag = args.uncertainty_flag
-    print('Uncertainty flag = {0}'.format(uncertainty_flag))
-
-    if datasource in ['omniglot', 'tieredImageNet']:
-        p_rand = 1e-7
-
-print()
-
-# -------------------------------------------------------------------------------------------------
-# MAIN program
-# -------------------------------------------------------------------------------------------------
+# --------------------------------------------------
+# MAIN
+# --------------------------------------------------
 def main():
     if train_flag:
-        meta_train()
+        train()
     else:
-        all_class_test, all_data_test = load_dataset(
-            dataset_name=datasource,
-            subset=test_set
-        )
-        
-        meta_validation(
-            all_classes=all_class_test,
-            all_data=all_data_test,
-            num_val_tasks=num_val_tasks,
-            p_rand=p_rand,
-            uncertainty=uncertainty_flag,
-            csv_flag=True
-        )
+        acc = evaluate()
+        mean = np.mean(a=acc)
+        std = np.std(a=acc)
+        n = len(acc)
+        print('Accuracy = {0:.4f} +/- {1:.4f}'.format(mean, 1.96 * std / np.sqrt(n)))
 
-# -------------------------------------------------------------------------------------------------
+# --------------------------------------------------
 # TRAIN
-# -------------------------------------------------------------------------------------------------
-def meta_train():
-    all_class_train, all_data_train = load_dataset(
-            dataset_name=datasource,
-            subset=train_set
+# --------------------------------------------------
+def train() -> None:
+    """Train
+    
+    Args:
+
+    Returns:
+    """
+
+    try:
+        # parse training parameters
+        meta_lr = args.meta_lr
+        minibatch = args.minibatch
+        minibatch_print = np.lcm(minibatch, 100)
+        decay_lr = args.decay_lr
+
+        num_episodes_per_epoch = args.num_episodes_per_epoch
+        num_epochs = args.num_epochs
+
+        episode_file = args.episode_file
+
+        # initialize/load model
+        net, meta_optimizer, schdlr = load_model(epoch_id=resume_epoch, meta_lr=meta_lr, decay_lr=decay_lr)
+        
+        # zero grad
+        meta_optimizer.zero_grad()
+
+        # get episode list if not None -> generator of episode names, each episode name consists of classes
+        episodes = get_episodes(episode_file_path=episode_file, num_episodes=None)
+
+        # initialize a tensorboard summary writer for logging
+        tb_writer = SummaryWriter(
+            log_dir=logdir,
+            purge_step=resume_epoch * num_episodes_per_epoch // minibatch_print if resume_epoch > 0 else None
         )
-    all_class_val, all_data_val = load_dataset(
-        dataset_name=datasource,
-        subset=val_set
-    )
-    all_class_train.update(all_class_val)
-    all_data_train.update(all_data_val)
 
-    # initialize data loader
-    train_loader = initialize_dataloader(
-        all_classes=[class_label for class_label in all_class_train],
-        num_classes_per_task=num_classes_per_task
-    )
+        for epoch_id in range(resume_epoch, resume_epoch + num_epochs, 1):
+            episode_count = 0
+            loss_monitor = 0
+            
+            while (episode_count < num_episodes_per_epoch):
+                # get episode from the given csv file, or just return None
+                try:
+                    episode_ = next(episodes)
+                except StopIteration:
+                    # if running out of episodes from the csv file, reset episode generator
+                    episodes = get_episodes(episode_file_path=episode_file)
+                finally:
+                    episode_ = next(episodes)
 
-    for epoch in range(resume_epoch, resume_epoch + num_epochs):
-        # variables used to store information of each epoch for monitoring purpose
-        meta_loss_saved = [] # meta loss to save
-        val_accuracies = []
-        train_accuracies = []
+                # randomly skip episode <=> shuffle episodes
+                if random.random() < 0.5:
+                    continue
 
-        task_count = 0 # a counter to decide when a minibatch of task is completed to perform meta update
-        meta_loss = 0 # accumulate the loss of many ensambling networks to descent gradient for meta update
-        num_meta_updates_count = 0
-
-        meta_loss_avg_print = 0 # compute loss average to print
-
-        meta_loss_avg_save = [] # meta loss to save
-
-        while (task_count < num_tasks_per_epoch):
-            for class_labels in train_loader:
-                x_t, y_t, x_v, y_v = get_train_val_task_data(
-                    all_classes=all_class_train,
-                    all_data=all_data_train,
-                    class_labels=class_labels,
-                    num_samples_per_class=num_samples_per_class,
-                    num_training_samples_per_class=num_training_samples_per_class,
-                    device=device
-                )
+                X = eps_generator.generate_episode(episode_name=episode_)
                 
-                prototypes = get_class_prototypes(x=x_t, y=y_t, w=theta, device=device)
+                # split into train and validation
+                xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
 
-                z_v = net.forward(x=x_v, w=theta)
-                distance_matrix = euclidean_distance(matrixN=z_v, matrixM=prototypes)
-                
-                loss_NLL = loss_fn(input=-distance_matrix, target=y_v)
+                # move data to gpu
+                x_t = torch.from_numpy(xt).float().to(device)
+                y_t = torch.tensor(yt, dtype=torch.long, device=device)
+                x_v = torch.from_numpy(xv).float().to(device)
+                y_v = torch.tensor(yv, dtype=torch.long, device=device)
 
-                if torch.isnan(loss_NLL).item():
-                    sys.exit('NaN error')
+                # adapt on the support data
+                z_prototypes = adapt_to_episode(x=x_t, y=y_t, net=net)
 
-                # accumulate meta loss
-                meta_loss = meta_loss + loss_NLL
+                # evaluate on the query data
+                z_v = net.forward(x_v)
+                distance_matrix = euclidean_distance(matrixN=z_v, matrixM=z_prototypes)
+                cls_loss = torch.nn.functional.cross_entropy(input=-distance_matrix, target=y_v)
+                loss_monitor += cls_loss.item()
 
-                task_count = task_count + 1
+                cls_loss = cls_loss / minibatch
+                cls_loss.backward()
 
-                if task_count % num_tasks_per_minibatch == 0:
-                    meta_loss = meta_loss/num_tasks_per_minibatch
+                episode_count += 1
 
-                    # accumulate into different variables for printing purpose
-                    meta_loss_avg_print += meta_loss.item()
+                # update the meta-model
+                if (episode_count % minibatch == 0):
+                    meta_optimizer.step()
+                    meta_optimizer.zero_grad()
 
-                    op_theta.zero_grad()
-                    meta_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(parameters=theta.values(), max_norm=10)
-                    op_theta.step()
+                # monitor losses
+                if (episode_count % minibatch_print == 0):
+                    loss_monitor /= minibatch_print
+                    global_step = (epoch_id * num_episodes_per_epoch + episode_count) // minibatch_print
+                    tb_writer.add_scalar(
+                        tag='Loss',
+                        scalar_value=loss_monitor,
+                        global_step=global_step
+                    )
+                    loss_monitor = 0
 
-                    # Printing losses
-                    num_meta_updates_count += 1
-                    if (num_meta_updates_count % num_meta_updates_print == 0):
-                        meta_loss_avg_save.append(meta_loss_avg_print/num_meta_updates_count)
-                        print('{0:d}, {1:2.4f}'.format(
-                            task_count,
-                            meta_loss_avg_save[-1]
-                        ))
+            # decay learning rate
+            schdlr.step()
 
-                        num_meta_updates_count = 0
-                        meta_loss_avg_print = 0
-                    
-                    if (task_count % num_tasks_save_loss == 0):
-                        meta_loss_saved.append(np.mean(meta_loss_avg_save))
-
-                        meta_loss_avg_save = []
-
-                        print('Saving loss...')
-                        val_accs = meta_validation(
-                            all_classes=all_class_val,
-                            all_data=all_data_val,
-                            num_val_tasks=100,
-                            p_rand=0.5,
-                            uncertainty=False,
-                            csv_flag=False
-                        )
-                        val_acc = np.mean(val_accs)
-                        val_ci95 = 1.96 * np.std(val_accs) / np.sqrt(num_val_tasks)
-                        print('Validation accuracy = {0:2.4f} +/- {1:2.4f}'.format(val_acc, val_ci95))
-                        val_accuracies.append(val_acc)
-
-                        train_accs = meta_validation(
-                            all_classes=all_class_train,
-                            all_data=all_data_train,
-                            num_val_tasks=100,
-                            p_rand=0.5,
-                            uncertainty=False,
-                            csv_flag=False
-                        )
-                        train_acc = np.mean(train_accs)
-                        train_ci95 = 1.96 * np.std(train_accs) / np.sqrt(num_val_tasks)
-                        print('Train accuracy = {0:2.4f} +/- {1:2.4f}\n'.format(train_acc, train_ci95))
-                        train_accuracies.append(train_acc)
-                    
-                    # reset meta loss
-                    meta_loss = 0
-
-                if (task_count >= num_tasks_per_epoch):
-                    break
-        if ((epoch + 1)% num_epochs_save == 0):
+            # save model
             checkpoint = {
-                'theta': theta,
-                'meta_loss': meta_loss_saved,
-                'val_accuracy': val_accuracies,
-                'train_accuracy': train_accuracies,
-                'op_theta': op_theta.state_dict()
+                'net_state_dict': net.state_dict(),
+                'op_state_dict': meta_optimizer.state_dict(),
+                'lr_schdlr_state_dict': schdlr.state_dict()
             }
-            print('SAVING WEIGHTS...')
-            checkpoint_filename = 'Epoch_{0:d}'.format(epoch + 1)
-            print(checkpoint_filename)
-            torch.save(checkpoint, os.path.join(dst_folder, checkpoint_filename))
-        scheduler.step()
-        print()
+            checkpoint_filename = 'Epoch_{0:d}.pt'.format(epoch_id + 1)
+            torch.save(checkpoint, os.path.join(logdir, checkpoint_filename))
+            checkpoint = 0
+            print('SAVING parameters into {0:s}\n'.format(checkpoint_filename))
 
-def get_class_prototypes(x, y, w, device=torch.device('cpu')):
-    # calculate the embeddings of the data
-    z = net.forward(x=x, w=w)
-    
-    # initialize prototypes
-    prototypes = torch.zeros((num_classes_per_task, z.shape[1]), device=device)
+    except KeyboardInterrupt:
+        pass
+    else:
+        pass
+    finally:
+        print('\nClose tensorboard summary writer')
+        tb_writer.close()
 
-    for i in range(num_classes_per_task):
-        z_one_class = z[y == i, :]
-        prototypes[i, :] = torch.mean(input=z_one_class, dim=0)
+# --------------------------------------------------
+# EVALUATION
+# --------------------------------------------------
+def evaluate() -> _typing.List[float]:
+    assert resume_epoch > 0
+
+    episode_file = args.episode_file
+    if episode_file is None:
+        num_episodes = args.num_episodes
+    else:
+        num_episodes = None
+
+    acc = []
+
+    if (num_episodes is None) and (episode_file is None):
+        raise ValueError('Expect exactly one of num_episodes and episode_file to be not None, receive both are None.')
+
+    # load model
+    net, _, _ = load_model(epoch_id=resume_epoch)
+    episodes = get_episodes(episode_file_path=episode_file, num_episodes=num_episodes)
+    for i, episode_ in enumerate(episodes):
+        X = eps_generator.generate_episode(episode_name=episode_)
+                
+        # split into train and validation
+        xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
+
+        # move data to gpu
+        x_t = torch.from_numpy(xt).float().to(device)
+        y_t = torch.tensor(yt, dtype=torch.long, device=device)
+        x_v = torch.from_numpy(xv).float().to(device)
+        y_v = torch.tensor(yv, dtype=torch.long, device=device)
+
+        # adapt on the support data
+        z_prototypes = adapt_to_episode(x=x_t, y=y_t, net=net)
+
+        # evaluate on the query data
+        z_v = net.forward(x_v)
+        distance_matrix = euclidean_distance(matrixN=z_v, matrixM=z_prototypes)
+        logits_v = -distance_matrix
+        episode_acc = (logits_v.argmax(dim=1) == y_v).sum().item() / (eps_generator.k_shot * len(X))
+
+        acc.append(episode_acc)
+
+        sys.stdout.write('\033[F')
+        print(i)
     
+    return acc
+
+    
+# --------------------------------------------------
+# Auxilliary
+# --------------------------------------------------
+def adapt_to_episode(x: torch.Tensor, y: torch.Tensor, net: torch.nn.Module) -> torch.Tensor:
+    """Also known as inner loop
+
+    Args:
+      x, y: training data and label
+      net: the base network
+    
+    Return: a MonkeyPatch module
+    """
+    # get embedding
+    z = net.forward(x)
+
+    z_prototypes = get_cls_prototypes(x=z, y=y)
+
+    return z_prototypes
+
+def get_cls_prototypes(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Calculate the prototypes/centroids
+
+    Args:
+        x: input data
+        y: corresponding labels
+
+    Returns: a tensor of prototypes with shape (C, d),
+        where C is the number of classes, d is the embedding dimension
+    """
+    _, d = x.shape
+    cls_idx = torch.unique(input=y, return_counts=False)
+    C = cls_idx.shape[0]
+
+    prototypes = torch.empty(size=(C, d), device=x.device)
+    for c in range(C):
+        prototypes[c, :] = torch.mean(input=x[y == cls_idx[c]], dim=0)
+
     return prototypes
 
-def euclidean_distance(matrixN, matrixM):
-    ''' Calculate distance from N points to M points
-    - matrixN = N x D matrix
-    - matrixM = M x D matrix
-    Return: N x M matrix
-    '''
-    N = matrixN.size(0)
-    M = matrixM.size(0)
-    D = matrixN.size(1)
-    assert D == matrixM.size(1)
+def get_episodes(
+    episode_file_path: _typing.Optional[str] = None,
+    num_episodes: _typing.Optional[int] = None
+) -> _typing.Generator:
+    """Get episodes from a file
 
-    matrixN = matrixN.unsqueeze(1).expand(N, M, D)
-    matrixM = matrixM.unsqueeze(0).expand(N, M, D)
+    Args:
+        episode_file_path:
+        num_episodes: dummy variable in training to create an infinite
+            episode (str) generator. In testing, it defines how many
+            episodes to evaluate
 
-    return torch.norm(input=matrixN - matrixM, p='fro', dim=2)
-
-def predict(x, prototypes):
-    z = net.forward(x=x, w=theta)
-    distance_matrix = euclidean_distance(matrixN=z, matrixM=prototypes)
-    likelihood = sm(input=-distance_matrix)
-
-    prob, y_pred = torch.max(input=likelihood, dim=1)
-    return y_pred, prob.detach().cpu().numpy()
-
-def meta_validation(all_classes, all_data, num_val_tasks, p_rand=None, uncertainty=False, csv_flag=False):
-    if csv_flag:
-        import csv
-        filename = 'ProtoNet_{0:s}_{1:d}way_{2:d}shot_{3:s}_{4:d}.csv'.format(
-            datasource,
-            num_classes_per_task,
-            num_training_samples_per_class,
-            'uncertainty' if uncertainty else 'accuracy',
-            resume_epoch
-        )
-        outfile = open(file=os.path.join('csv', filename), mode='w')
-        wr = csv.writer(outfile, quoting=csv.QUOTE_NONE)
+    Return: an episode (str) generator
+    """
+    # get episode list if not None
+    if episode_file_path is not None:
+        with open(file=episode_file_path, mode='r') as f_csv:
+            csv_rd = csv.reader(f_csv, delimiter=',')
+            episodes = (row for row in csv_rd) # generator from list
+    elif num_episodes is not None:
+        episodes = itertools.repeat(None, times=num_episodes)
     else:
-        accuracies = []
+        episodes = itertools.repeat(None)
     
-    total_val_samples_per_task = num_val_samples_per_class * num_classes_per_task
-    
-    all_class_names = [class_name for class_name in sorted(all_classes.keys())]
-    all_task_names = itertools.combinations(all_class_names, r=num_classes_per_task)
+    return episodes
 
-    task_count = 0
-    for class_labels in all_task_names:
-        if p_rand is not None:
-            skip_task = np.random.binomial(n=1, p=p_rand)
-            if skip_task == 1:
-                continue
-        
-        x_t, y_t, x_v, y_v = get_train_val_task_data(
-            all_classes=all_classes,
-            all_data=all_data,
-            class_labels=class_labels,
-            num_samples_per_class=num_samples_per_class,
-            num_training_samples_per_class=num_training_samples_per_class,
-            device=device
-        )
-        
-        prototypes = get_class_prototypes(x=x_t, y=y_t, w=theta, device=device)
-        y_pred, prob = predict(x=x_v, prototypes=prototypes)
-        correct = [1 if y_pred[i] == y_v[i] else 0 for i in range(total_val_samples_per_task)]
+def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> _typing.Tuple[torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
+    """Initialize the model, optimizer and lr_scheduler
+    The example here is to load ResNet18. You can write
+    your own class of model, and specify here.
 
-        accuracy = np.mean(a=correct, axis=0)
-        
-        if csv_flag:
-            if not uncertainty:
-                outline = [class_label for class_label in class_labels]
-                outline.append(accuracy)
-                wr.writerow(outline)
-            else:
-                for correct_, prob_ in zip(correct, prob):
-                    outline = [correct_, prob_]
-                    wr.writerow(outline)
+    Args:
+        meta_lr: learning rate for meta-parameters
+        decay_lr: decay factor of learning rate
+
+    Returns:
+        net:
+        meta-optimizer:
+        schdlr:
+    """
+    net = ResNet18(input_channel=nc, dim_output=n_way)
+    # net = ConvNet(dim_output=None)
+
+    # initialize
+    net.apply(_weights_init)
+
+    # move to gpu
+    net.to(device)
+
+    meta_optimizer = torch.optim.Adam(params=net.parameters(), lr=meta_lr)
+    schdlr = torch.optim.lr_scheduler.ExponentialLR(optimizer=meta_optimizer, gamma=decay_lr)
+
+    return net, meta_optimizer, schdlr
+
+def load_model(
+    epoch_id: int,
+    meta_lr: _typing.Optional[float] = None,
+    decay_lr: _typing.Optional[float] = None
+) -> _typing.Tuple[torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
+    """Initialize or load model
+
+    Args:
+        epoch_id: id of the file to load
+        meta_lr:
+        decay_lr:
+
+    Returns:
+        net:
+        meta-optimizer:
+        schdlr:
+    """
+    net, meta_optimizer, schdlr = initialize_model(meta_lr=1e-3, decay_lr=decay_lr)
+
+    if epoch_id > 0:
+        checkpoint_filename = 'Epoch_{0:d}.pt'.format(epoch_id)
+        checkpoint_fullpath = os.path.join(logdir, checkpoint_filename)
+        if torch.cuda.is_available():
+            saved_checkpoint = torch.load(
+                checkpoint_fullpath,
+                map_location=lambda storage,
+                loc: storage.cuda(gpu_id)
+            )
         else:
-            accuracies.append(accuracy)
+            saved_checkpoint = torch.load(
+                checkpoint_fullpath,
+                map_location=lambda storage,
+                loc: storage
+            )
 
-        task_count = task_count + 1
-        if not train_flag:
-            sys.stdout.write('\033[F')
-            print(task_count)
-        if task_count >= num_val_tasks:
-            break
-    if csv_flag:
-        outfile.close()
-        return None
-    else:
-        return accuracies
+        net.load_state_dict(state_dict=saved_checkpoint['net_state_dict'])
+        meta_optimizer.load_state_dict(state_dict=saved_checkpoint['op_state_dict'])
 
-if __name__ == "__main__":
+        if meta_lr is not None:
+            for param_g in meta_optimizer.param_groups:
+                if param_g['lr'] != meta_lr:
+                    param_g['lr'] = meta_lr
+
+        schdlr = torch.optim.lr_scheduler.ExponentialLR(optimizer=meta_optimizer, gamma=decay_lr)
+        schdlr.load_state_dict(state_dict=saved_checkpoint['lr_schdlr_state_dict'])
+        if decay_lr is not None:
+            if decay_lr != schdlr.gamma:
+                schdlr.gamma = decay_lr
+
+    return net, meta_optimizer, schdlr
+
+# --------------------------------------------------
+# 
+# --------------------------------------------------
+if __name__ == '__main__':
     main()

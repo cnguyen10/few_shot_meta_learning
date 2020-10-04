@@ -78,3 +78,22 @@ def _weights_init(m):
     elif classname.find('BatchNorm') != -1:
         torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
         torch.nn.init.constant_(m.bias.data, 0)
+
+def euclidean_distance(matrixN: torch.Tensor, matrixM: torch.Tensor) -> torch.Tensor:
+    """Calculate Euclidean distance from N points to M points
+
+    Args:
+        matrixN: an N x D matrix for N points
+        matrixM: a M x D matrix for M points
+
+    Returns: N x M matrix
+    """
+    N = matrixN.size(0)
+    M = matrixM.size(0)
+    D = matrixN.size(1)
+    assert D == matrixM.size(1)
+
+    matrixN = matrixN.unsqueeze(1).expand(N, M, D)
+    matrixM = matrixM.unsqueeze(0).expand(N, M, D)
+
+    return torch.norm(input=matrixN - matrixM, p='fro', dim=2)
