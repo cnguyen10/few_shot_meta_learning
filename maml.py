@@ -20,7 +20,8 @@ import csv
 import argparse
 import typing as _typing
 
-from _utils import train_val_split
+from CommonModels import ConvNet, ResNet18
+from _utils import train_val_split, _weights_init
 
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -382,55 +383,11 @@ def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> 
         meta-optimizer:
         schdlr:
     """
-    # define a neural network
-    net = torchvision.models.resnet18(pretrained=False)
-
-    # modify the resnet to suit the data
-    # change first conv2d from 7-by-7 kernel size to 3-by-3
-    net.conv1 = torch.nn.Conv2d(
-        in_channels=nc,
-        out_channels=64,
-        kernel_size=(3, 3),
-        stride=(2, 2),
-        padding=(3, 3),
-        bias=False
-    )
-
-    # update batch norm for meta-learning by setting momentum to 1
-    net.bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-
-    net.layer1[0].bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-    net.layer1[0].bn2 = torch.nn.BatchNorm2d(64, momentum=1)
-
-    net.layer1[1].bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-    net.layer1[1].bn2 = torch.nn.BatchNorm2d(64, momentum=1)
-
-    net.layer2[0].bn1 = torch.nn.BatchNorm2d(128, momentum=1)
-    net.layer2[0].bn2 = torch.nn.BatchNorm2d(128, momentum=1)
-    net.layer2[0].downsample[1] = torch.nn.BatchNorm2d(128, momentum=1)
-
-    net.layer2[1].bn1 = torch.nn.BatchNorm2d(128, momentum=1)
-    net.layer2[1].bn2 = torch.nn.BatchNorm2d(128, momentum=1)
-
-    net.layer3[0].bn1 = torch.nn.BatchNorm2d(256, momentum=1)
-    net.layer3[0].bn2 = torch.nn.BatchNorm2d(256, momentum=1)
-    net.layer3[0].downsample[1] = torch.nn.BatchNorm2d(256, momentum=1)
-
-    net.layer3[1].bn1 = torch.nn.BatchNorm2d(256, momentum=1)
-    net.layer3[1].bn2 = torch.nn.BatchNorm2d(256, momentum=1)
-
-    net.layer4[0].bn1 = torch.nn.BatchNorm2d(512, momentum=1)
-    net.layer4[0].bn2 = torch.nn.BatchNorm2d(512, momentum=1)
-    net.layer4[0].downsample[1] = torch.nn.BatchNorm2d(512, momentum=1)
-
-    net.layer4[1].bn1 = torch.nn.BatchNorm2d(512, momentum=1)
-    net.layer4[1].bn2 = torch.nn.BatchNorm2d(512, momentum=1)
-
-    # remove last fc layer
-    net.fc = torch.nn.Linear(in_features=512, out_features=n_way)
+    # net = ResNet18(input_channel=nc, dim_output=n_way)
+    net = ConvNet(dim_output=n_way)
 
     # initialize
-    net.apply(weights_init)
+    net.apply(_weights_init)
 
     # move to gpu
     net.to(device)
@@ -493,17 +450,6 @@ def load_model(
                 schdlr.gamma = decay_lr
 
     return net, meta_optimizer, schdlr
-
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        # torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
-        torch.nn.init.kaiming_normal_(m.weight.data)
-        if m.bias is not None:
-            torch.nn.init.zeros_(m.bias.data)
-    elif classname.find('BatchNorm') != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-        torch.nn.init.constant_(m.bias.data, 0)
 
 # --------------------------------------------------
 # 

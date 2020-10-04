@@ -1,3 +1,4 @@
+import torch
 import random
 import os
 import typing as _typing
@@ -65,3 +66,15 @@ def train_val_split(X: _typing.List[_typing.List[np.ndarray]], k_shot: int, shuf
     x_v = np.concatenate(x_v, axis=0)
 
     return x_t, y_t, x_v, y_v
+
+
+def _weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv\d') != -1:
+        # torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
+        torch.nn.init.kaiming_normal_(m.weight.data)
+        if m.bias is not None:
+            torch.nn.init.zeros_(m.bias.data)
+    elif classname.find('BatchNorm') != -1:
+        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
+        torch.nn.init.constant_(m.bias.data, 0)

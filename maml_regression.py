@@ -19,7 +19,8 @@ import argparse
 import typing as _typing
 
 from EpisodeGenerator import SineLineGenerator
-from _utils import train_val_split
+from _utils import train_val_split, _weights_init
+from CommonModels import FcNet
 
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -302,10 +303,10 @@ def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> 
         schdlr:
     """
     # define a neural network
-    net = FC_Net(num_units=32)
+    net = FcNet(dim_input=1, dim_output=1, num_hidden_units=(32, 32, 32))
 
     # initialize
-    net.apply(weights_init)
+    net.apply(_weights_init)
 
     # move to gpu
     net.to(device)
@@ -368,49 +369,6 @@ def load_model(
                 schdlr.gamma = decay_lr
 
     return net, meta_optimizer, schdlr
-
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        # torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
-        torch.nn.init.kaiming_normal_(m.weight.data)
-        if m.bias is not None:
-            torch.nn.init.zeros_(m.bias.data)
-    elif classname.find('BatchNorm') != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-        torch.nn.init.constant_(m.bias.data, 0)
-
-class FC_Net(torch.nn.Module):
-    """Simple fully connected network
-    """
-    def __init__(self, num_units: int = 32) -> None:
-        """Initialize a 2-hidden-layer instance
-
-        Args: num_units: number of hidden units in each hidden layer
-        """
-        super(FC_Net, self).__init__()
-        self.num_units = num_units
-
-        self.main = torch.nn.Sequential(
-            torch.nn.Linear(in_features=1, out_features=num_units),
-            # torch.nn.BatchNorm1d(num_features=num_units),
-            torch.nn.ReLU(),
-
-            torch.nn.Linear(in_features=num_units, out_features=num_units),
-            # torch.nn.BatchNorm1d(num_features=num_units),
-            torch.nn.ReLU(),
-
-            torch.nn.Linear(in_features=num_units, out_features=num_units),
-            # torch.nn.BatchNorm1d(num_features=num_units),
-            torch.nn.ReLU(),
-
-            torch.nn.Linear(in_features=num_units, out_features=1)
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward
-        """
-        return self.main(x)
 
 if __name__ == '__main__':
     main()
