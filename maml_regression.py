@@ -362,7 +362,6 @@ def load_model(
                 if param_g['lr'] != meta_lr:
                     param_g['lr'] = meta_lr
 
-        schdlr = torch.optim.lr_scheduler.ExponentialLR(optimizer=meta_optimizer, gamma=decay_lr)
         schdlr.load_state_dict(state_dict=saved_checkpoint['lr_schdlr_state_dict'])
         if decay_lr is not None:
             if decay_lr != schdlr.gamma:

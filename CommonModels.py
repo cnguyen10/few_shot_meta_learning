@@ -52,10 +52,10 @@ class FcNet(torch.nn.Module):
         """"""
         return self.fc_net(x)
 
-class ConvNet(torch.nn.Module):
+class CNN(torch.nn.Module):
     """A simple convolutional module networks
     """
-    def __init__(self, dim_output: _typing.Optional[int] = None, image_size: _typing.Tuple[int, int, int] = (3, 84, 84)) -> None:
+    def __init__(self, dim_output: _typing.Optional[int] = None, image_size: _typing.Tuple[int, int, int] = (3, 84, 84), bn_affine: bool = False) -> None:
         """Initialize an instance
 
         Args:
@@ -64,7 +64,7 @@ class ConvNet(torch.nn.Module):
             image_size: a 3-d tuple consisting of (nc, iH, iW)
 
         """
-        super(ConvNet, self).__init__()
+        super(CNN, self).__init__()
 
         self.dim_output = dim_output
         self.image_size = image_size
@@ -72,6 +72,8 @@ class ConvNet(torch.nn.Module):
         self.stride = (2, 2)
         self.padding = (1, 1)
         self.num_channels = (32, 32, 32, 32)
+        self.bn_affine = bn_affine
+
         self.nz = self.get_flatten_feature_dimension()
 
         self.cnn = self.construct_network()
@@ -102,9 +104,14 @@ class ConvNet(torch.nn.Module):
                     kernel_size=self.kernel_size,
                     stride=self.stride,
                     padding=self.padding,
-                    bias=False
+                    bias=not self.bn_affine
                 ),
-                torch.nn.BatchNorm2d(num_features=self.num_channels[0], momentum=1),
+                torch.nn.BatchNorm2d(
+                    num_features=self.num_channels[0],
+                    momentum=1,
+                    track_running_stats=False,
+                    affine=self.bn_affine
+                ),
                 torch.nn.ReLU()
             )
         )
@@ -119,9 +126,14 @@ class ConvNet(torch.nn.Module):
                         kernel_size=self.kernel_size,
                         stride=self.stride,
                         padding=self.padding,
-                        bias=False
+                        bias=not self.bn_affine
                     ),
-                    torch.nn.BatchNorm2d(num_features=self.num_channels[i], momentum=1),
+                    torch.nn.BatchNorm2d(
+                        num_features=self.num_channels[i],
+                        momentum=1,
+                        track_running_stats=False,
+                        affine=self.bn_affine
+                    ),
                     torch.nn.ReLU()
                 )
             )
@@ -146,7 +158,7 @@ class ConvNet(torch.nn.Module):
 
 class ResNet18(torch.nn.Module):
     """A modified version of ResNet-18 that suits meta-learning"""
-    def __init__(self, input_channel: int = 3, dim_output: _typing.Optional[int] = None):
+    def __init__(self, input_channel: int = 3, dim_output: _typing.Optional[int] = None, bn_affine: bool = False) -> None:
         """
         Args:
             dim_output: the number of classes at the output. If None,
@@ -157,6 +169,7 @@ class ResNet18(torch.nn.Module):
         self.input_channel = input_channel
         self.dim_output = dim_output
         self.net = self.modified_resnet18()
+        self.bn_affine = bn_affine
 
     def modified_resnet18(self):
         """
@@ -171,38 +184,38 @@ class ResNet18(torch.nn.Module):
             kernel_size=(3, 3),
             stride=(2, 2),
             padding=(3, 3),
-            bias=False
+            bias=not self.bn_affine
         )
 
         # update batch norm for meta-learning by setting momentum to 1
-        net.bn1 = torch.nn.BatchNorm2d(64, momentum=1)
+        net.bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer1[0].bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-        net.layer1[0].bn2 = torch.nn.BatchNorm2d(64, momentum=1)
+        net.layer1[0].bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer1[0].bn2 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer1[1].bn1 = torch.nn.BatchNorm2d(64, momentum=1)
-        net.layer1[1].bn2 = torch.nn.BatchNorm2d(64, momentum=1)
+        net.layer1[1].bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer1[1].bn2 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer2[0].bn1 = torch.nn.BatchNorm2d(128, momentum=1)
-        net.layer2[0].bn2 = torch.nn.BatchNorm2d(128, momentum=1)
-        net.layer2[0].downsample[1] = torch.nn.BatchNorm2d(128, momentum=1)
+        net.layer2[0].bn1 = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer2[0].bn2 = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer2[0].downsample[1] = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer2[1].bn1 = torch.nn.BatchNorm2d(128, momentum=1)
-        net.layer2[1].bn2 = torch.nn.BatchNorm2d(128, momentum=1)
+        net.layer2[1].bn1 = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer2[1].bn2 = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer3[0].bn1 = torch.nn.BatchNorm2d(256, momentum=1)
-        net.layer3[0].bn2 = torch.nn.BatchNorm2d(256, momentum=1)
-        net.layer3[0].downsample[1] = torch.nn.BatchNorm2d(256, momentum=1)
+        net.layer3[0].bn1 = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer3[0].bn2 = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer3[0].downsample[1] = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer3[1].bn1 = torch.nn.BatchNorm2d(256, momentum=1)
-        net.layer3[1].bn2 = torch.nn.BatchNorm2d(256, momentum=1)
+        net.layer3[1].bn1 = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer3[1].bn2 = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer4[0].bn1 = torch.nn.BatchNorm2d(512, momentum=1)
-        net.layer4[0].bn2 = torch.nn.BatchNorm2d(512, momentum=1)
-        net.layer4[0].downsample[1] = torch.nn.BatchNorm2d(512, momentum=1)
+        net.layer4[0].bn1 = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer4[0].bn2 = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer4[0].downsample[1] = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
-        net.layer4[1].bn1 = torch.nn.BatchNorm2d(512, momentum=1)
-        net.layer4[1].bn2 = torch.nn.BatchNorm2d(512, momentum=1)
+        net.layer4[1].bn1 = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer4[1].bn2 = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
         # last layer
         if self.dim_output is not None:

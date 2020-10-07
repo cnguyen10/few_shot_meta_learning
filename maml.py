@@ -13,15 +13,14 @@ import numpy as np
 import os
 import random
 import sys
-import itertools
 
 import csv
 
 import argparse
 import typing as _typing
 
-from CommonModels import ConvNet, ResNet18
-from _utils import train_val_split, _weights_init
+from CommonModels import CNN, ResNet18
+from _utils import train_val_split, _weights_init, get_episodes
 
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -89,6 +88,9 @@ n_way = args.n_way
 first_order = args.first_order
 
 ds_folder = os.path.join(args.ds_folder, datasource)
+
+episode_file = args.episode_file
+num_episodes = args.num_episodes
 # --------------------------------------------------
 # Data loader
 # --------------------------------------------------
@@ -103,7 +105,7 @@ if datasource in ['omniglot-py']:
         expand_dim=False,
         load_images=True
     )
-    nc = 1
+    image_size = (1, 64, 64)
 elif datasource in ['miniImageNet']:
     from EpisodeGenerator import ImageFolderGenerator
     eps_generator = ImageFolderGenerator(
@@ -116,7 +118,7 @@ elif datasource in ['miniImageNet']:
         expand_dim=False,
         load_images=True
     )
-    nc = 3
+    image_size = (3, 84, 84)
 else:
     raise ValueError('Unknown dataset')
 
@@ -127,11 +129,7 @@ def main():
     if train_flag:
         train()
     else:
-        acc = evaluate()
-        mean = np.mean(a=acc)
-        std = np.std(a=acc)
-        n = len(acc)
-        print('Accuracy = {0:.4f} +/- {1:.4f}'.format(mean, 1.96 * std / np.sqrt(n)))
+        evaluate()
 
 # --------------------------------------------------
 # TRAIN
@@ -154,8 +152,6 @@ def train() -> None:
         num_episodes_per_epoch = args.num_episodes_per_epoch
         num_epochs = args.num_epochs
 
-        episode_file = args.episode_file
-
         # initialize/load model
         net, meta_optimizer, schdlr = load_model(epoch_id=resume_epoch, meta_lr=meta_lr, decay_lr=decay_lr)
         
@@ -163,7 +159,7 @@ def train() -> None:
         meta_optimizer.zero_grad()
 
         # get episode list if not None -> generator of episode names, each episode name consists of classes
-        episodes = get_episodes(episode_file_path=episode_file, num_episodes=None)
+        episodes = get_episodes(episode_file_path=episode_file)
 
         # initialize a tensorboard summary writer for logging
         tb_writer = SummaryWriter(
@@ -177,19 +173,9 @@ def train() -> None:
             
             while (episode_count < num_episodes_per_epoch):
                 # get episode from the given csv file, or just return None
-                try:
-                    episode_ = next(episodes)
-                except StopIteration:
-                    # if running out of episodes from the csv file, reset episode generator
-                    episodes = get_episodes(episode_file_path=episode_file)
-                finally:
-                    episode_ = next(episodes)
+                episode_name = random.sample(population=episodes, k=1)[0]
 
-                # randomly skip episode <=> shuffle episodes
-                if random.random() < 0.5:
-                    continue
-
-                X = eps_generator.generate_episode(episode_name=episode_)
+                X = eps_generator.generate_episode(episode_name=episode_name)
                 
                 # split into train and validation
                 xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
@@ -254,14 +240,8 @@ def train() -> None:
 # --------------------------------------------------
 # EVALUATION
 # --------------------------------------------------
-def evaluate() -> _typing.List[float]:
+def evaluate() -> None:
     assert resume_epoch > 0
-
-    episode_file = args.episode_file
-    if episode_file is None:
-        num_episodes = args.num_episodes
-    else:
-        num_episodes = None
 
     acc = []
 
@@ -270,32 +250,50 @@ def evaluate() -> _typing.List[float]:
 
     # load model
     net, _, _ = load_model(epoch_id=resume_epoch)
-    episodes = get_episodes(episode_file_path=episode_file, num_episodes=num_episodes)
-    for i, episode_ in enumerate(episodes):
-        X = eps_generator.generate_episode(episode_name=episode_)
-                
-        # split into train and validation
-        xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
+    net.eval()
 
-        # move data to gpu
-        x_t = torch.from_numpy(xt).float().to(device)
-        y_t = torch.tensor(yt, dtype=torch.long, device=device)
-        x_v = torch.from_numpy(xv).float().to(device)
-        y_v = torch.tensor(yv, dtype=torch.long, device=device)
+    episodes = get_episodes(episode_file_path=episode_file)
+    if None in episodes:
+        episodes = [None] * num_episodes
 
-        # adapt on the support data
-        fnet = adapt_to_episode(x=x_t, y=y_t, net=net)
+    file_acc = os.path.join(logdir, 'accuracy.txt')
+    f_acc = open(file=file_acc, mode='w')
+    try:
+        for i, episode_name in enumerate(episodes):
+            X = eps_generator.generate_episode(episode_name=episode_name)
+                    
+            # split into train and validation
+            xt, yt, xv, yv = train_val_split(X=X, k_shot=k_shot, shuffle=True)
 
-        # evaluate on the query data
-        logits_v = fnet(x_v)
-        episode_acc = (logits_v.argmax(dim=1) == y_v).sum().item() / (eps_generator.k_shot * len(X))
+            # move data to gpu
+            x_t = torch.from_numpy(xt).float().to(device)
+            y_t = torch.tensor(yt, dtype=torch.long, device=device)
+            x_v = torch.from_numpy(xv).float().to(device)
+            y_v = torch.tensor(yv, dtype=torch.long, device=device)
 
-        acc.append(episode_acc)
+            # adapt on the support data
+            fnet = adapt_to_episode(x=x_t, y=y_t, net=net)
 
-        sys.stdout.write('\033[F')
-        print(i)
+            # evaluate on the query data
+            logits_v = fnet(x_v)
+            episode_acc = (logits_v.argmax(dim=1) == y_v).sum().item() / (len(X) * v_shot)
+
+            acc.append(episode_acc)
+            f_acc.write('{}\n'.format(episode_acc))
+
+            sys.stdout.write('\033[F')
+            print(i)
+    except:
+        pass
+    else:
+        pass
+    finally:
+        f_acc.close()
     
-    return acc
+    mean = np.mean(a=acc)
+    std = np.std(a=acc)
+    n = len(acc)
+    print('Accuracy = {0:.4f} +/- {1:.4f}'.format(mean, 1.96 * std / np.sqrt(n)))
 
     
 # --------------------------------------------------
@@ -343,32 +341,6 @@ def adapt_to_episode(x: torch.Tensor, y: torch.Tensor, net: torch.nn.Module) -> 
 
     return fnet
 
-def get_episodes(
-    episode_file_path: _typing.Optional[str] = None,
-    num_episodes: _typing.Optional[int] = None
-) -> _typing.Generator:
-    """Get episodes from a file
-
-    Args:
-        episode_file_path:
-        num_episodes: dummy variable in training to create an infinite
-            episode (str) generator. In testing, it defines how many
-            episodes to evaluate
-
-    Return: an episode (str) generator
-    """
-    # get episode list if not None
-    if episode_file_path is not None:
-        with open(file=episode_file_path, mode='r') as f_csv:
-            csv_rd = csv.reader(f_csv, delimiter=',')
-            episodes = (row for row in csv_rd) # generator from list
-    elif num_episodes is not None:
-        episodes = itertools.repeat(None, times=num_episodes)
-    else:
-        episodes = itertools.repeat(None)
-    
-    return episodes
-
 def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> _typing.Tuple[torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
     """Initialize the model, optimizer and lr_scheduler
     The example here is to load ResNet18. You can write
@@ -383,8 +355,8 @@ def initialize_model(meta_lr: float, decay_lr: _typing.Optional[float] = 1.) -> 
         meta-optimizer:
         schdlr:
     """
-    # net = ResNet18(input_channel=nc, dim_output=n_way)
-    net = ConvNet(dim_output=n_way)
+    # net = ResNet18(input_channel=image_size[0], dim_output=n_way, bn_affine=True)
+    net = CNN(dim_output=n_way, image_size=image_size, bn_affine=True)
 
     # initialize
     net.apply(_weights_init)
@@ -405,9 +377,6 @@ def load_model(
     """Initialize or load model
 
     Args:
-        logdir: folder storing files
-        n_way: number of classes in the classification
-        nc: number of input channels (1 for BnW images, 3 for color images)
         epoch_id: id of the file to load
         meta_lr:
         decay_lr:
@@ -443,7 +412,6 @@ def load_model(
                 if param_g['lr'] != meta_lr:
                     param_g['lr'] = meta_lr
 
-        schdlr = torch.optim.lr_scheduler.ExponentialLR(optimizer=meta_optimizer, gamma=decay_lr)
         schdlr.load_state_dict(state_dict=saved_checkpoint['lr_schdlr_state_dict'])
         if decay_lr is not None:
             if decay_lr != schdlr.gamma:

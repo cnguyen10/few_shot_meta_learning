@@ -1,6 +1,8 @@
 import torch
 import random
 import os
+import csv
+import itertools
 import typing as _typing
 import numpy as np
 
@@ -67,17 +69,40 @@ def train_val_split(X: _typing.List[_typing.List[np.ndarray]], k_shot: int, shuf
 
     return x_t, y_t, x_v, y_v
 
+def get_episodes(episode_file_path: _typing.Optional[str] = None) -> _typing.List[str]:
+    """Get episodes from a file
+
+    Args:
+        episode_file_path:
+        num_episodes: dummy variable in training to create an infinite
+            episode (str) generator. In testing, it defines how many
+            episodes to evaluate
+
+    Return: an episode (str) generator
+    """
+    # get episode list if not None
+    if episode_file_path is not None:
+        episodes = []
+        with open(file=episode_file_path, mode='r') as f_csv:
+            csv_rd = csv.reader(f_csv, delimiter=',')
+            episodes = list(csv_rd)
+    else:
+        episodes = [None]
+    
+    return episodes
+
 
 def _weights_init(m):
     classname = m.__class__.__name__
-    if classname.find('Conv\d') != -1:
-        # torch.nn.init.normal_(m.weight.data, 0.0, 0.02)
-        torch.nn.init.kaiming_normal_(m.weight.data)
+    if classname.find('Conv') != -1:
+        if m.weight is not None:
+            torch.nn.init.kaiming_normal_(m.weight.data)
         if m.bias is not None:
             torch.nn.init.zeros_(m.bias.data)
     elif classname.find('BatchNorm') != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-        torch.nn.init.constant_(m.bias.data, 0)
+        if m.weight is not None:
+            torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
+            torch.nn.init.constant_(m.bias.data, 0)
 
 def euclidean_distance(matrixN: torch.Tensor, matrixM: torch.Tensor) -> torch.Tensor:
     """Calculate Euclidean distance from N points to M points
@@ -97,3 +122,43 @@ def euclidean_distance(matrixN: torch.Tensor, matrixM: torch.Tensor) -> torch.Te
     matrixM = matrixM.unsqueeze(0).expand(N, M, D)
 
     return torch.norm(input=matrixN - matrixM, p='fro', dim=2)
+
+class NormalVariationalNet(torch.nn.Module):
+    """A simple neural network that simulate the
+    reparameterization trick. Its parameters are
+    the mean and std-vector
+    """
+    def __init__(self, base_net: torch.nn.Module) -> None:
+        """
+        Args:
+            base_net: the base network
+        """
+        super(NormalVariationalNet, self).__init__()
+
+        # dict of parameters of based network
+        base_state_dict = base_net.state_dict()
+
+        # initialize parameters
+        self.mean = torch.nn.ParameterList([torch.nn.Parameter(torch.empty_like(v)) \
+                                            for v in base_state_dict.values()])
+        self.log_std = torch.nn.ParameterList([torch.nn.Parameter(torch.rand_like(v) - 4) \
+                                               for v in base_state_dict.values()])
+        
+        # initialize the mean following some standard initializations
+        for m in self.mean:
+            if m.ndim > 1:
+                torch.nn.init.kaiming_normal_(tensor=m, nonlinearity='relu')
+            else:
+                torch.nn.init.zeros_(tensor=m)
+
+        self.num_base_params = np.sum([torch.numel(p) for p in self.mean])
+
+    def forward(self) -> _typing.List[torch.Tensor]:
+        """Output the parameters of the base network in list format to pass into higher monkeypatch
+        """
+        out = []
+        for m, log_s in zip(self.mean, self.log_std):
+            eps_normal = torch.randn_like(m, device=m.device)
+            temp = m + eps_normal * torch.exp(input=log_s)
+            out.append(temp)
+        return out
