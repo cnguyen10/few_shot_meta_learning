@@ -49,20 +49,21 @@ class OmniglotLoader(object):
     def __init__(
         self,
         root: str = folder,
-        images_background: bool = True,
+        train_subset: bool = True,
         suffix: str = '.png',
         min_num_cls: int = 5,
         max_num_cls: int = 20,
         k_shot: int = 20,
         expand_dim: bool = False,
-        load_images: bool = True
+        load_images: bool = True,
+        xml_url: _typing.Optional[str] = None
     ) -> None:
         """Initialize a data loader for Omniglot data set or a two-level dataset
             with structure similar to Omniglot: alphabet -> character -> image
 
         Args:
             root (str): path to the folder of Omniglot data set
-            image_background (bool): if True, this will load data from
+            train_subset (bool): if True, this will load data from
                 the ``images_background`` folder (or, training set). If False,
                 it loads data from ``images_evaluation``` (or, validation set)
             suffix (str): the suffix of images
@@ -73,10 +74,11 @@ class OmniglotLoader(object):
                 This option is optimal for small data set since it would speed up
                 the data loading process. If False, it will load images whenever called.
                 This option is suitable for large data set.
+            xml_url: dummy keyword to be consistent to other classes
 
         Returns: an OmniglotLoader instance
         """
-        self.root = os.path.join(root, 'images_background' if images_background else 'images_evaluation')
+        self.root = os.path.join(root, 'images_background' if train_subset else 'images_evaluation')
         self.suffix = suffix
         self.min_num_cls = min_num_cls
         self.max_num_cls = max_num_cls
