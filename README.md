@@ -10,14 +10,13 @@ This repository contains the implementations of many meta-learning algorithms to
 These have been tested to work with Pytorch 1.6.
 
 ## New updates
-The old implementation requires "functional" `torch.nn.Module`. When using a different model/network, we need to implement that model in its "functional" form, so that we easily work with its parameters. The new update utilizes <b>[higher](https://github.com/facebookresearch/higher)</b> - a library from Facebook Research, so that we only need to load the "conventional" model written in PyTorch without rewriting its "functional" form.
+The old implementation requires "functional" `torch.nn.Module`. When using a different model/network, we need to implement that model in its "functional" form, so that we easily work with its parameters. The new update utilizes <b>[higher](https://github.com/facebookresearch/higher)</b> - a library from Facebook Research, so that we only need to load or specify the "conventional" model written in PyTorch in `CommonModels.py` without rewriting its "functional" form.
 
 Although <b>higher</b> provides convenient APIs to track gradients, it does not allow us to use the "first-order" approximate, resulting in more memory and longer training time. I, therefore, modify to enable the "first-order" approximation. It is now controled by setting `--first-order=True` when running the code.
 
 In addition, I rewrite a more readable code to load data.
 
-Current update is available for MAML only. Other algorithms, such as ABML and VAMPIRE will be updated later. Stay tune.
-
+Current update is available for most popular algorithms, including MAML, ABML, VAMPIRE and ProtoNet. Please refer to `classification_meta_learning.py`. I will try to update for regression soon.
 
 ## Data source
 ### Regression
