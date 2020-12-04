@@ -143,7 +143,7 @@ def get_cls_prototypes(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
     return prototypes
 
-def kl_divergence_(p: typing.List[torch.Tensor], q: typing.List[torch.Tensor]) -> torch.Tensor:
+def kl_divergence_gaussians(p: typing.List[torch.Tensor], q: typing.List[torch.Tensor]) -> torch.Tensor:
     """Calculate KL divergence between 2 diagonal Gaussian
 
     Args: each paramter is list with 1st half as mean, and the 2nd half is log_std

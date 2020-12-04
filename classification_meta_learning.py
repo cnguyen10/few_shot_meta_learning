@@ -20,7 +20,7 @@ import typing as typing
 
 from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
 from CommonModels import CNN, ResNet18
-from _utils import train_val_split, get_episodes, euclidean_distance, get_cls_prototypes, IdentityNet, NormalVariationalNet
+from _utils import train_val_split, get_episodes, euclidean_distance, get_cls_prototypes, IdentityNet, NormalVariationalNet, kl_divergence_gaussians
 
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -666,7 +666,7 @@ def adapt_to_episode_innerloop_vampire(
         y=y,
         hyper_net=hyper_net,
         f_base_net=f_base_net,
-        kl_div_fn=kl_divergence_
+        kl_div_fn=kl_divergence_gaussians
     )
 
 def loss_on_query_fn_vampire(
@@ -701,9 +701,9 @@ def get_accuracy_fn_vampire(
     logits = evaluate_fn_vampire(x=x, f_hyper_net=f_hyper_net, f_base_net=f_base_net)
     for logit in logits:
         logits_sm = torch.nn.functional.softmax(input=logit, dim=1)
-        logits_avg = logit_avg + logits_sm
+        logits_avg = logits_avg + logits_sm
     
-    logits_avg = logit_avg / len(logits)
+    logits_avg = logits_avg / len(logits)
 
     accuracy = (logits_avg.argmax(dim=1) == y).float().mean().item()
 
@@ -724,7 +724,7 @@ def loss_on_query_fn_abml(
 
     hyper_net_params = [p for p in kwargs['hyper_net'].parameters()]
     q_params = f_hyper_net.fast_params
-    kl_loss = kl_divergence_(p=q_params, q=hyper_net_params)
+    kl_loss = kl_divergence_gaussians(p=q_params, q=hyper_net_params)
 
     loss_meta = loss_cls + kl_loss * kl_weight
 
