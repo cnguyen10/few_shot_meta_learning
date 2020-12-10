@@ -168,8 +168,8 @@ class ResNet18(torch.nn.Module):
 
         self.input_channel = input_channel
         self.dim_output = dim_output
-        self.net = self.modified_resnet18()
         self.bn_affine = bn_affine
+        self.net = self.modified_resnet18()
 
     def modified_resnet18(self):
         """
