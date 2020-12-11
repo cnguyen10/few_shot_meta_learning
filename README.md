@@ -10,9 +10,32 @@ This repository contains the implementations of many meta-learning algorithms to
 These have been tested to work with Pytorch 1.7.
 
 ## New updates
-The old implementation requires "functional" `torch.nn.Module`. When using a different model/network, we need to implement that model in its "functional" form, so that we easily work with its parameters. The new update utilizes <b>[higher](https://github.com/facebookresearch/higher)</b> - a library from Facebook Research, so that we only need to load or specify the "conventional" model written in PyTorch in `CommonModels.py` without rewriting its "functional" form.
+The old implementation requires to code a "functional" form of `torch.nn.Module` of the model of interest. This is, however, inconvenient when changing the network architecture.
 
-Although <b>higher</b> provides convenient APIs to track gradients, it does not allow us to use the "first-order" approximate, resulting in more memory and longer training time. I, therefore, modify to enable the "first-order" approximation. It is now controled by setting `--first-order=True` when running the code.
+Fortunately, Facebook Research has developed [__higher__][higher repo] - a library that can easily convert any "conventional" `torch.nn.Module` into its "functional" form. For example:
+```
+# define a network
+resnet18 = torchvision.models.resnet18(pretrain=False)
+
+# get its parameters
+params = list(resnet18.paramters())
+
+# convert the network to its functional form
+f_resnet18 = higher.patch.make_functional(restnet18)
+
+# forward
+y1 = f_resnet18.forward(x=x1, params=params)
+
+# update params
+new_params = update_parameter(params)
+
+# forward on different data with new paramter
+y2 = f_resnet18.forward(x=x2, params=new_params)
+```
+
+Hence, we only need to load or specify the "conventional" model written in PyTorch without re-implementing its "functional" form. I have made a few common models in `CommonModels.py`, so that we can load them to use immediately.
+
+Although [__higher__][higher repo] provides convenient APIs to track gradients, it does not allow us to use the "first-order" approximate, resulting in more memory and longer training time. I have created a work-around solution to enable the "first-order" approximation, and controlled this by setting `--first-order=True` when running the code.
 
 In addition, I rewrite a more readable code to load data.
 
@@ -22,7 +45,11 @@ Current update is available for most popular algorithms, including MAML, ABML, V
 The implementation is mainly in `classification_meta_learning.py` with some auxilliary classes and functions in `_utils.py`. The operation principle of the implementation can be divided into 3 steps:
 
 ### Step 1: initialize hyper-net and base-net
-Recall the nature of the meta-learning considered as: &theta; &rarr; __w__ &rarr; y &larr; __x__, where &theta; denotes the parameter of the hyper-net, __w__ is the base-model parameter, and (__x__, y) is the data.
+Recall the nature of the meta-learning as:
+
+&theta; &rarr; __w__ &rarr; y &larr; __x__,
+
+where &theta; denotes the parameter of the hyper-net, __w__ is the base-model parameter, and (__x__, y) is the data.
 
 In the implementation, I follow this generative process, where the hyper-net will generate the base-net. It can be summarized in the following _pseudo-code_:
 
@@ -38,22 +65,25 @@ base_net = hyper_net.forward()
 - ABML and VAMPIRE: the base-net parameter is a sample drawn from a diagonal Gaussian distribution parameterized by the meta-parameter. Hence, the hyper-net is designed to simulate this sampling process. In this case, `hyper_net_cls` is the class `NormalVariationalNet` in `_utils.py`.
 - Prototypical network is different from the above algorithms due to its metric-learning nature. In the implementation, the base-net is a result of identity operation from the hyper-net (similar to MAML).
 
-Why is it such a complicated implementation? It is to allow us to easily specify the architecture of the base-net. If it is not cleared to you, please open an issue or send me an email. I am happy to discuss to improve the readability of the code further.
+Why is it such a complicated implementation? It is to allow us to share the common procedures of many meta-learning algorithms. If it is not cleared to you, please open an issue or send me an email. I am happy to discuss to improve the readability of the code further.
 
 ### Step 2: task adaptation (often known as inner-loop)
 There are 2 sub-functions corresponding to MAML-like algorithms and protonet.
 
 #### `adapt_to_episode_innerloop`
 The idea is simple:
-1. Generate the base-net from the hyper-net
-2. Train the base-net using the few-shot data
-3. Return the learnt base-net for that particular task
+1. Generate base-net(s) from the hyper-net
+2. Use the generated base-net(s) to calculate loss on _training_ (also known as _support_) data
+3. Minimize the loss w.r.t. the parameter of the hyper-net
+4. Return the learnt hyper-net for that particular task
 
 #### `adapt_to_episode_protonet`
 Calculate and return the prototypes
 
 ### Step 3: evaluate on validation subset
-The learnt base-net, in the case of MAML-like algorithms, or the prototypes, in the case of prototypical networks, are used to predict the labels of the data in the validation subset. The predicted labels are then used to calculate the loss for the parameter of the hyper-net during training, or compute the prediction accuracy during testing.
+The learnt hyper-net, in the case of MAML-like algorithms, or the prototypes, in the case of prototypical networks, are used to predict the labels of the data in the validation subset. 
+- In training, the predicted labels are used to calculate the loss, and the parameter of the hyper-net is updated to minimize that loss.
+- In testing, the predicted labels are used to compute the prediction accuracy.
 
 ## Data source
 ### Regression
@@ -85,6 +115,13 @@ For the legacy implementation such as BMAML, please go to the `utils.py` and mod
 
 To run, copy and paste the command at the beginning of each algorithm script and change the configurable parameters (if needed).
 
+[Tensorboard](https://pytorch.org/docs/stable/tensorboard.html) is also integrated into the implementation. Hence, you can open it and monitor the training on your favourite browser.
+
+## Final note
+If you feel this repository useful, please give a star. It might not mean much, but that let me know that what I am doing is helpful to encourage me to do more.
+
+In addition, please consider to give a star to the [__higher__][higher repo] repository developed by Facebook. Without it, we still suffer from the arduous re-implementation of model "functional" form.
+
 ---
 (legacy)
 
@@ -92,3 +129,5 @@ To run, copy and paste the command at the beginning of each algorithm script and
 The command for testing is slightly different from running. This can be done by provide the file (or epoch) we want to test through `resume_epoch=xx`, where `xx` is the id of the file. It is followed by the parameter `--test`, and:
 - `--no_uncertainty`: quanlitative result in regression, or output the accuracy of each task in classification,
 - `--uncertainty`: outputs a csv-file with accuracy and prediction class probability of each image. This will be then used to calculate the calibration error.
+
+[higher repo]: https://github.com/facebookresearch/higher
