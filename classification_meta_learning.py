@@ -1,5 +1,5 @@
 """
-python3 MLBase.py --datasource=omniglot-py --base-model=CNN --batchnorm=True --ds-folder=../datasets --minibatch=50 --num-epochs=1 --num-episodes-per-epoch=100000 --resume-epoch=0 --mode=protonet
+python3 classification_meta_learning.py --datasource=omniglot-py --base-model=CNN --batchnorm=True --ds-folder=../datasets --minibatch=50 --num-epochs=1 --num-episodes-per-epoch=100000 --resume-epoch=0 --mode=protonet
 """
 import torch
 import torchvision
