@@ -1,8 +1,7 @@
 """
-python3 classification_meta_learning.py --datasource=omniglot-py --base-model=CNN --batchnorm=True --ds-folder=../datasets --minibatch=50 --num-epochs=1 --num-episodes-per-epoch=100000 --resume-epoch=0 --mode=protonet
+python3 classification_meta_learning.py --datasource=omniglot-py --suffix=png --base-model=CNN --no-batchnorm --first-order --ds-folder=../datasets --min-way=5 --max-way=5 --k-shot=1 --v-shot=19 --minibatch=50 --num-epochs=1 --num-episodes-per-epoch=100000 --num-inner-updates=5 --inner-lr=0.01 --meta-lr=1e-3 --resume-epoch=0 --mode=maml --train
 """
 import torch
-import torchvision
 from torch.utils.tensorboard import SummaryWriter
 import higher
 
@@ -10,9 +9,6 @@ import numpy as np
 import os
 import random
 import sys
-import itertools
-
-import csv
 
 import argparse
 import typing as typing
@@ -32,11 +28,19 @@ parser.add_argument('--suffix', type=str, default='png', help='Suffix of images,
 parser.add_argument('--load-images', type=bool, default=True, help='Load images on RAM (True) or on the fly (False)')
 
 parser.add_argument('--mode', type=str, default='maml', help='Few-shot learning methods, including: maml, abml, vampire, protonet, bmaml')
-parser.add_argument('--first-order', type=bool, default=True, help='First order or track higher gradients')
-parser.add_argument('--base-model', type=str, default='CNN', help='The base model used, including CNN and ResNet18 defined in CommonModels')
-parser.add_argument('--batchnorm', type=bool, default=False, help='Including learnable BatchNorm in the model or not learnable BN')
 
-parser.add_argument('--max-way', type=int, default=20, help='Maximum number of classes within an episode')
+parser.add_argument('--first-order', dest='first_order', action='store_true')
+parser.add_argument('--no-first-order', dest='first_order', action='store_false')
+parser.set_defaults(first_order=True)
+
+parser.add_argument('--base-model', type=str, default='CNN', help='The base model used, including CNN and ResNet18 defined in CommonModels')
+
+# Including learnable BatchNorm in the model or not learnable BN
+parser.add_argument('--batchnorm', dest='batchnorm', action='store_true')
+parser.add_argument('--no-batchnorm', dest='batchnorm', action='store_false')
+parser.set_defaults(batchnorm=False)
+
+parser.add_argument('--max-way', type=int, default=5, help='Maximum number of classes within an episode')
 parser.add_argument('--min-way', type=int, default=5, help='Maximum number of classes within an episode')
 
 parser.add_argument('--num-inner-updates', type=int, default=5, help='The number of gradient updates for episode adaptation')
@@ -87,7 +91,7 @@ if not os.path.exists(path=logdir):
     from pathlib import Path
     Path(logdir).mkdir(parents=True, exist_ok=True)
 
-kl_weight = 0.1
+kl_weight = 0.0001
 minibatch_print = np.lcm(config['minibatch'], 100)
 
 # --------------------------------------------------
@@ -95,10 +99,13 @@ minibatch_print = np.lcm(config['minibatch'], 100)
 # --------------------------------------------------
 if config['datasource'] in ['omniglot-py']:
     EpisodeGeneratorClass = OmniglotLoader
-    image_size = (1, 64, 64)
+    image_size = (1, 28, 28)
 elif config['datasource'] in ['miniImageNet']:
     EpisodeGeneratorClass = ImageFolderGenerator
     image_size = (3, 84, 84)
+elif config['datasource'] == 'miniImageNet_64':
+    EpisodeGeneratorClass = ImageFolderGenerator
+    image_size = (3, 64, 64)
 else:
     raise ValueError('Unknown dataset')
 
@@ -132,7 +139,11 @@ def initialize_model(hyper_net_cls, meta_lr: float, decay_lr: float = 1.) -> typ
         schdlr:
     """
     if config['base_model'] in ['CNN']:
-        base_net = CNN(dim_output=config['min_way'], image_size=image_size, bn_affine=config['batchnorm'])
+        base_net = CNN(
+            dim_output=config['min_way'] if config['min_way'] == config['max_way'] else None,
+            image_size=image_size,
+            bn_affine=config['batchnorm']
+        )
     elif config['base_model'] in ['ResNet18']:
         base_net = ResNet18(
             input_channel=image_size[0],
@@ -746,13 +757,15 @@ if __name__ == "__main__":
             'hyper_net_cls': IdentityNet,
             'get_f_base_net_fn': get_f_base_net_fn_maml,
             'adapt_to_episode': adapt_to_episode_innerloop_maml,
-            'loss_on_query_fn': loss_on_query_fn_maml
+            'loss_on_query_fn': loss_on_query_fn_maml,
+            'get_accuracy_fn': get_accuracy_fn_maml
         },
         'vampire': {
             'hyper_net_cls': NormalVariationalNet,
             'get_f_base_net_fn': get_f_base_net_fn_maml,
             'adapt_to_episode': adapt_to_episode_innerloop_vampire,
-            'loss_on_query_fn': loss_on_query_fn_vampire
+            'loss_on_query_fn': loss_on_query_fn_vampire,
+            'get_accuracy_fn': get_accuracy_fn_vampire
         },
         'abml': {
             'hyper_net_cls': NormalVariationalNet,
