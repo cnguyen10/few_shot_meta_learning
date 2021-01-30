@@ -118,7 +118,7 @@ To run, copy and paste the command at the beginning of each algorithm script and
 [Tensorboard](https://pytorch.org/docs/stable/tensorboard.html) is also integrated into the implementation. Hence, you can open it and monitor the training on your favourite browser.
 
 ## Final note
-If you feel this repository useful, please give a star. It might not mean much, but that let me know that what I am doing is helpful to encourage me to do more.
+If you feel this repository useful, please give a star. It might not mean much, but that lets me know that what I am doing is helpful, and encourages me to do more.
 
 In addition, please consider to give a star to the [__higher__][higher repo] repository developed by Facebook. Without it, we still suffer from the arduous re-implementation of model "functional" form.
 
