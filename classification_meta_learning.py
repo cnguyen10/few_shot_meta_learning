@@ -369,7 +369,7 @@ def evaluate(
         acc_file = open(file=os.path.join(logdir, 'accuracy.txt'), mode='w')
         for i, episode_name in enumerate(episodes):
             X = eps_generator.generate_episode(episode_name=episode_name)
-                
+
             # split into train and validation
             xt, yt, xv, yv = train_val_split(X=X, k_shot=config['k_shot'], shuffle=True)
 
@@ -448,17 +448,17 @@ def adapt_to_episode_innerloop(
     hyper_net_params = [p for p in hyper_net.parameters()]
 
     for _ in range(config['num_inner_updates']):
+        grad_accum = [0] * len(hyper_net_params) # accumulate gradients of Monte Carlo sampling
+
+        q_params = f_hyper_net.fast_params # parameters of the hypernet
+
+        # KL divergence
+        kl_div = kl_div_fn(p=hyper_net_params, q=q_params)
+
         for _ in range(config['num_models']):
             base_net_params = f_hyper_net.forward()
             y_logits = f_base_net.forward(x, params=base_net_params)
             cls_loss = torch.nn.functional.cross_entropy(input=y_logits, target=y)
-
-            q_params = f_hyper_net.fast_params # list of parameters/tensors
-
-            grad_accum = [0] * len(q_params)
-
-            # KL divergence
-            kl_div = kl_div_fn(p=hyper_net_params, q=q_params)
 
             loss = cls_loss + kl_div * kl_weight
 
@@ -474,7 +474,7 @@ def adapt_to_episode_innerloop(
                     inputs=q_params,
                     create_graph=config['train_flag']
                 )
-            
+
             for i in range(len(all_grads)):
                 grad_accum[i] = grad_accum[i] + all_grads[i] / config['num_models']
 
