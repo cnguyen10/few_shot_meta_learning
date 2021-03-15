@@ -19,8 +19,6 @@ python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorit
 
 python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
 """
-from Maml import Maml
-from ProtoNet import ProtoNet
 import torch
 import numpy as np
 import os
