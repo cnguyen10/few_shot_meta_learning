@@ -205,3 +205,106 @@ class ResNet18(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """"""
         return self.net(x)
+
+class MiniCNN(torch.nn.Module):
+    def __init__(self, dim_output: _typing.Optional[int] = None, bn_affine: bool = False) -> None:
+        """Initialize an instance
+
+        Args:
+            dim_output: the number of classes at the output. If None,
+                the last fully-connected layer will be excluded.
+            image_size: a 3-d tuple consisting of (nc, iH, iW)
+
+        """
+        super(MiniCNN, self).__init__()
+
+        self.dim_output = dim_output
+        self.kernel_size = (3, 3)
+        self.stride = (2, 2)
+        self.padding = (1, 1)
+        self.num_channels = (32, 32, 32, 32)
+        self.bn_affine = bn_affine
+        self.cnn = self.construct_network()
+    
+    def construct_network(self) -> torch.nn.Module:
+        """Construct the network
+
+        """
+        net = torch.nn.Sequential(
+            torch.nn.LazyConv2d(
+                out_channels=4,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=True
+            ),
+            torch.nn.BatchNorm2d(
+                num_features=4,
+                momentum=1.,
+                affine=False,
+                track_running_stats=False
+            ),
+            torch.nn.ReLU(),
+
+            torch.nn.Conv2d(
+                in_channels=4,
+                out_channels=8,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=True
+            ),
+            torch.nn.BatchNorm2d(
+                num_features=8,
+                momentum=1.,
+                affine=False,
+                track_running_stats=False
+            ),
+            torch.nn.ReLU(),
+
+            torch.nn.Conv2d(
+                in_channels=8,
+                out_channels=16,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=True
+            ),
+            torch.nn.BatchNorm2d(
+                num_features=16,
+                momentum=1.,
+                affine=False,
+                track_running_stats=False
+            ),
+            torch.nn.ReLU(),
+
+            torch.nn.Conv2d(
+                in_channels=16,
+                out_channels=32,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=True
+            ),
+            torch.nn.BatchNorm2d(
+                num_features=32,
+                momentum=1.,
+                affine=False,
+                track_running_stats=False
+            ),
+            torch.nn.ReLU(),
+
+            torch.nn.Flatten(start_dim=1, end_dim=-1)
+        )
+        if self.dim_output is None:
+            clf = torch.nn.Identity()
+        else:
+            clf = torch.nn.LazyLinear(out_features=self.dim_output)
+
+        net.add_module(name='classifier', module=clf)
+
+        return net
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward"""
+        return self.cnn(x)

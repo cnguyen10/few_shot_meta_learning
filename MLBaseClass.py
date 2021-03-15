@@ -13,7 +13,7 @@ import sys
 import abc
 
 from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
-from CommonModels import CNN, ResNet18
+from CommonModels import CNN, ResNet18, MiniCNN
 from _utils import train_val_split, get_episodes, IdentityNet
 
 # --------------------------------------------------
@@ -231,7 +231,7 @@ class MLBaseClass(object):
         """
         print('Evaluation is started.\n')
         # load model
-        model = self.load_model(resume_epoch=self.config['resume_epoch'], hyper_net_class=self.hyper_net_class)
+        model = self.load_model(resume_epoch=self.config['resume_epoch'], hyper_net_class=self.hyper_net_class, eps_generator=eps_generator)
 
         # get list of episode names, each episode name consists of classes
         eps = get_episodes(episode_file_path=self.config['episode_file'])
@@ -384,6 +384,8 @@ class MLBaseClass(object):
                 dim_output=self.config['min_way'],
                 bn_affine=self.config['batchnorm']
             )
+        elif self.config['network_architecture'] == 'MiniCNN':
+            base_net = MiniCNN(dim_output=self.config['min_way'], bn_affine=self.config['batchnorm'])
         else:
             raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
 
@@ -397,6 +399,8 @@ class MLBaseClass(object):
         x_t = torch.from_numpy(xt).float()
         # run to initialize lazy modules
         base_net(x_t)
+        params = torch.nn.utils.parameters_to_vector(parameters=base_net.parameters())
+        print('Number of parameters of the base network = {0:d}.\n'.format(params.numel()))
 
         hyper_net = kwargs['hyper_net_class'](base_net=base_net)
 
