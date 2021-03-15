@@ -28,55 +28,7 @@ class Vampire(MLBaseClass):
             base_net: the base neural network
             meta_opt: the optimizer for meta-parameter
         """
-        if resume_epoch is None:
-            resume_epoch = self.config['resume_epoch']
-
-        if self.config['network_architecture'] == 'CNN':
-            base_net = CNN(
-                dim_output=self.config['min_way'],
-                image_size=self.config['image_size'],
-                bn_affine=self.config['batchnorm']
-            )
-        elif self.config['network_architecture'] == 'ResNet18':
-            base_net = ResNet18(
-                input_channel=self.config['image_size'][0],
-                dim_output=self.config['min_way'],
-                bn_affine=self.config['batchnorm']
-            )
-        else:
-            raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
-
-        hyper_net = kwargs['hyper_net_class'](base_net=base_net)
-
-        # move to device
-        base_net.to(self.config['device'])
-        hyper_net.to(self.config['device'])
-
-        # optimizer
-        meta_opt = torch.optim.Adam(params=hyper_net.parameters(), lr=self.config['meta_lr'])
-
-        # load model if there is saved file
-        if resume_epoch > 0:
-            # path to the saved file
-            checkpoint_path = os.path.join(self.config['logdir'], 'Epoch_{0:d}.pt'.format(resume_epoch))
-            
-            # load file
-            saved_checkpoint = torch.load(
-                f=checkpoint_path,
-                map_location=lambda storage,
-                loc: storage.cuda(self.config['device'].index) if self.config['device'].type == 'cuda' else storage
-            )
-
-            # load state dictionaries
-            hyper_net.load_state_dict(state_dict=saved_checkpoint['hyper_net_state_dict'])
-            meta_opt.load_state_dict(state_dict=saved_checkpoint['opt_state_dict'])
-
-            # update learning rate
-            for param_group in meta_opt.param_groups:
-                if param_group['lr'] != self.config['meta_lr']:
-                    param_group['lr'] = self.config['meta_lr']
-
-        return hyper_net, base_net, meta_opt
+        return self.load_maml_like_model(resume_epoch=resume_epoch, **kwargs)
 
     def adapt_and_predict(self, model: typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer], x_t: torch.Tensor, y_t: torch.Tensor, x_v: torch.Tensor, y_v: torch.Tensor) -> typing.Tuple[higher.patch._MonkeyPatchBase, typing.List[torch.Tensor]]:
         """Adapt and predict the labels of the queried data

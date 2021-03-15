@@ -1,23 +1,23 @@
 """
 # MAML
-python3 main.py --datasource=omniglot-py --suffix=png --image-size 1 64 64 --load-images --ml-algorithm=MAML --num-models=1 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=MAML --num-models=1 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --image-size 3 84 84 --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
 # VAMPIRE
-python3 main.py --datasource=omniglot-py --suffix=png --image-size 1 64 64 --load-images --ml-algorithm=vampire --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=vampire --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --image-size 3 84 84 --load-images --ml-algorithm=vampire --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=vampire --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
 # ABML
-python3 main.py --datasource=omniglot-py --suffix=png --image-size 1 64 64 --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --image-size 3 84 84 --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
 # PROTONET
-python3 main.py --datasource=omniglot-py --suffix=png --image-size 1 64 64 --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --image-size 3 84 84 --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
 """
 from Maml import Maml
 from ProtoNet import ProtoNet
@@ -39,7 +39,6 @@ parser = argparse.ArgumentParser(description='Setup variables')
 
 parser.add_argument('--datasource', type=str, default='omniglot-py', help='Dataset: omniglot, ImageNet')
 parser.add_argument('--suffix', type=str, default='png', help='Suffix of images, png for omniglot-py, jpg for ImageNet')
-parser.add_argument('--image-size', nargs=3, type=int, help='Size of the input images: 1 28 28 or 3 84 84')
 
 parser.add_argument('--load-images', dest='load_images', action='store_true')
 parser.add_argument('--no-load-images', dest='load_images', action='store_false')

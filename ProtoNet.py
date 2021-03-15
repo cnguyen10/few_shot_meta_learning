@@ -4,7 +4,7 @@ import typing
 import os
 
 from MLBaseClass import MLBaseClass
-from _utils import get_cls_prototypes, euclidean_distance
+from _utils import get_cls_prototypes, euclidean_distance, train_val_split
 from CommonModels import CNN, ResNet18
 
 class ProtoNet(MLBaseClass):
@@ -12,7 +12,6 @@ class ProtoNet(MLBaseClass):
         super().__init__(config=config)
 
         self.hyper_net_class = None # dummy to match with MAML and VAMPIRE
-        # self.KL_div_fn = lambda p, q: torch.tensor(0., device=self.config['device'])
 
     def load_model(self, resume_epoch: int = None, **kwargs) -> typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer]:
         """Initialize or load the protonet and its optimizer
@@ -31,17 +30,26 @@ class ProtoNet(MLBaseClass):
         if self.config['network_architecture'] == 'CNN':
             protonet = CNN(
                 dim_output=None,
-                image_size=self.config['image_size'],
                 bn_affine=self.config['batchnorm']
             )
         elif self.config['network_architecture'] == 'ResNet18':
             protonet = ResNet18(
-                input_channel=self.config['image_size'][0],
                 dim_output=None,
                 bn_affine=self.config['batchnorm']
             )
         else:
             raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
+        
+        # ---------------------------------------------------------------
+        # run a dummy task to initialize lazy modules defined in base_net
+        # ---------------------------------------------------------------
+        eps_data = kwargs['eps_generator'].generate_episode(episode_name=None)
+        # split data into train and validation
+        xt, _, _, _ = train_val_split(X=eps_data, k_shot=self.config['k_shot'], shuffle=True)
+        # convert numpy data into torch tensor
+        x_t = torch.from_numpy(xt).float()
+        # run to initialize lazy modules
+        protonet(x_t)
 
         # move to device
         protonet.to(self.config['device'])

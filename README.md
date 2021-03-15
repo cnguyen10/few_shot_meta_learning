@@ -7,7 +7,9 @@ This repository contains the implementations of many meta-learning algorithms to
 - [Amortized Bayesian Meta-Learning](https://openreview.net/pdf?id=rkgpy3C5tX)
 - [Uncertainty in Model-Agnostic Meta-Learning using Variational Inference (VAMPIRE)](http://openaccess.thecvf.com/content_WACV_2020/papers/Nguyen_Uncertainty_in_Model-Agnostic_Meta-Learning_using_Variational_Inference_WACV_2020_paper.pdf)
 
-These have been tested with PyTorch 1.7.
+## Python package requirements
+- PyTorch __1.8__ (which intrioduces the new Lazy module)
+- [higher][higher repo]
 
 ## New updates with functional form of torch module
 What does "functional" mean? It is similar to the module `torch.nn.functional`, where the parameters can be handled explicitly, not implicitly as in PyTorch `torch.nn.Sequential()`. For example, one can construct a 2-hidden-layer fully-connected neural network from PyTorch under `fc_model`:
@@ -145,7 +147,9 @@ http://localhost:6006/
 ```
 
 ## Final note
-If you feel this repository useful, please give a :star:
+If you only need to run MAML and feel that my implementation is complicated, [torch-meta](https://github.com/tristandeleu/pytorch-meta) is a worthy repository to take a look. The difference between torch-meta and mine is to extend the implementation to other algorithms, such as VAMPIRE and ABML.
+
+If you feel this repository useful, please give a :star: to motivate my work.
 
 In addition, please consider to give a :star: to the [__higher__][higher repo] repository developed by Facebook. Without it, we still suffer from the arduous re-implementation of model "functional" form.
 

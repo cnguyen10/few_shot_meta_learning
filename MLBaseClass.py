@@ -13,6 +13,7 @@ import sys
 import abc
 
 from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
+from CommonModels import CNN, ResNet18
 from _utils import train_val_split, get_episodes, IdentityNet
 
 # --------------------------------------------------
@@ -124,7 +125,7 @@ class MLBaseClass(object):
         print('Training is started.\nLog is stored at {0:s}.\n'.format(self.config['logdir']))
 
         # initialize/load model. Please see the load_model method implemented in each specific class for further information about the model
-        model = self.load_model(resume_epoch=self.config['resume_epoch'], hyper_net_class=self.hyper_net_class)
+        model = self.load_model(resume_epoch=self.config['resume_epoch'], hyper_net_class=self.hyper_net_class, eps_generator=eps_generator)
         model[-1].zero_grad()
 
         # get list of episode names, each episode name consists of classes
@@ -305,7 +306,6 @@ class MLBaseClass(object):
             q_params = f_hyper_net.fast_params # parameters of the task-specific hyper_net
 
             # KL divergence
-            # KL_div = KL_div_fn(p=hyper_net_params, q=q_params)
             KL_div = self.KL_divergence(p=hyper_net_params, q=q_params)
 
             for _ in range(self.config['num_models']):
@@ -358,3 +358,74 @@ class MLBaseClass(object):
             logits[model_id] = logits_temp
 
         return logits
+
+    def load_maml_like_model(self, resume_epoch: int = None, **kwargs) -> typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer]:
+        """Initialize or load the hyper-net and base-net models
+
+        Args:
+            hyper_net_class: point to the hyper-net class of interest: IdentityNet for MAML or NormalVariationalNet for VAMPIRE
+            resume_epoch: the index of the file containing the saved model
+
+        Returns: a tuple consisting of
+            hypet_net: the hyper neural network
+            base_net: the base neural network
+            meta_opt: the optimizer for meta-parameter
+        """
+        if resume_epoch is None:
+            resume_epoch = self.config['resume_epoch']
+
+        if self.config['network_architecture'] == 'CNN':
+            base_net = CNN(
+                dim_output=self.config['min_way'],
+                bn_affine=self.config['batchnorm']
+            )
+        elif self.config['network_architecture'] == 'ResNet18':
+            base_net = ResNet18(
+                dim_output=self.config['min_way'],
+                bn_affine=self.config['batchnorm']
+            )
+        else:
+            raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
+
+        # ---------------------------------------------------------------
+        # run a dummy task to initialize lazy modules defined in base_net
+        # ---------------------------------------------------------------
+        eps_data = kwargs['eps_generator'].generate_episode(episode_name=None)
+        # split data into train and validation
+        xt, _, _, _ = train_val_split(X=eps_data, k_shot=self.config['k_shot'], shuffle=True)
+        # convert numpy data into torch tensor
+        x_t = torch.from_numpy(xt).float()
+        # run to initialize lazy modules
+        base_net(x_t)
+
+        hyper_net = kwargs['hyper_net_class'](base_net=base_net)
+
+        # move to device
+        base_net.to(self.config['device'])
+        hyper_net.to(self.config['device'])
+
+        # optimizer
+        meta_opt = torch.optim.Adam(params=hyper_net.parameters(), lr=self.config['meta_lr'])
+
+        # load model if there is saved file
+        if resume_epoch > 0:
+            # path to the saved file
+            checkpoint_path = os.path.join(self.config['logdir'], 'Epoch_{0:d}.pt'.format(resume_epoch))
+            
+            # load file
+            saved_checkpoint = torch.load(
+                f=checkpoint_path,
+                map_location=lambda storage,
+                loc: storage.cuda(self.config['device'].index) if self.config['device'].type == 'cuda' else storage
+            )
+
+            # load state dictionaries
+            hyper_net.load_state_dict(state_dict=saved_checkpoint['hyper_net_state_dict'])
+            meta_opt.load_state_dict(state_dict=saved_checkpoint['opt_state_dict'])
+
+            # update learning rate
+            for param_group in meta_opt.param_groups:
+                if param_group['lr'] != self.config['meta_lr']:
+                    param_group['lr'] = self.config['meta_lr']
+
+        return hyper_net, base_net, meta_opt
