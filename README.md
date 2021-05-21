@@ -8,7 +8,7 @@ This repository contains the implementations of many meta-learning algorithms to
 - [Uncertainty in Model-Agnostic Meta-Learning using Variational Inference (VAMPIRE)](http://openaccess.thecvf.com/content_WACV_2020/papers/Nguyen_Uncertainty_in_Model-Agnostic_Meta-Learning_using_Variational_Inference_WACV_2020_paper.pdf)
 
 ## Python package requirements
-- PyTorch __1.8__ (which intrioduces the new Lazy module)
+- PyTorch __1.8.1__ (which introduces a new module called "Lazy", corresponding to the Dense layer in Tensorflow)
 - [higher][higher repo]
 
 ## New updates with functional form of torch module
