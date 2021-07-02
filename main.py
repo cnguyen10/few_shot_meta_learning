@@ -14,6 +14,9 @@ python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorit
 
 python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
+# BMAML
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=bmaml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --no-strided --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+
 # PROTONET
 python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
 
@@ -29,6 +32,7 @@ from Maml import Maml
 from Vampire import Vampire
 from Vampire2 import Vampire2
 from Abml import Abml
+from Bmaml import Bmaml
 from ProtoNet import ProtoNet
 from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
 # --------------------------------------------------
@@ -48,7 +52,7 @@ parser.add_argument('--ml-algorithm', type=str, default='MAML', help='Few-shot l
 parser.add_argument('--first-order', dest='first_order', action='store_true')
 parser.add_argument('--no-first-order', dest='first_order', action='store_false')
 parser.set_defaults(first_order=True)
-parser.add_argument('--KL-weight', type=float, default=1e-5, help='Weighting factor for the KL divergence (only applicable for VAMPIRE)')
+parser.add_argument('--KL-weight', type=float, default=1e-6, help='Weighting factor for the KL divergence (only applicable for VAMPIRE)')
 
 parser.add_argument('--network-architecture', type=str, default='CNN', help='The base model used, including CNN and ResNet18 defined in CommonModels')
 
@@ -132,6 +136,7 @@ if __name__ == "__main__":
         'Vampire': Vampire,
         "Vampire2": Vampire2,
         'Abml': Abml,
+        "Bmaml": Bmaml,
         'Protonet': ProtoNet
     }
     print('ML algorithm = {0:s}'.format(config['ml_algorithm']))

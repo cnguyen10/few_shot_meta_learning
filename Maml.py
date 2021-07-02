@@ -63,7 +63,7 @@ class Maml(MLBaseClass):
         params = torch.nn.utils.parameters_to_vector(parameters=base_net.parameters())
         print('Number of parameters of the base network = {0:,}.\n'.format(params.numel()))
 
-        model["hyper_net"] = kwargs['hyper_net_class'](base_net=base_net)
+        model["hyper_net"] = kwargs["hyper_net_class"](base_net=base_net, num_models=self.config["num_models"])
 
         # move to device
         base_net.to(self.config['device'])
