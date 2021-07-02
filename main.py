@@ -2,22 +2,22 @@
 # MAML
 python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # VAMPIRE2
 python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # ABML
 python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # PROTONET
 python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --no-strided --num-epochs=100 --resume-epoch=0 --train
 """
 import torch
 import numpy as np
@@ -56,6 +56,11 @@ parser.add_argument('--network-architecture', type=str, default='CNN', help='The
 parser.add_argument('--batchnorm', dest='batchnorm', action='store_true')
 parser.add_argument('--no-batchnorm', dest='batchnorm', action='store_false')
 parser.set_defaults(batchnorm=False)
+
+# use strided convolution or max-pooling
+parser.add_argument('--strided', dest='strided', action='store_true')
+parser.add_argument('--no-strided', dest='strided', action='store_false')
+parser.set_defaults(strided=True)
 
 parser.add_argument('--max-way', type=int, default=5, help='Maximum number of classes within an episode')
 parser.add_argument('--min-way', type=int, default=5, help='Maximum number of classes within an episode')

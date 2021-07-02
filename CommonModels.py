@@ -1,12 +1,11 @@
 import torch
 from torchvision.models import resnet18
-import typing as _typing
-import math
+import typing
 
 class FcNet(torch.nn.Module):
     """Simple fully connected network
     """
-    def __init__(self, dim_output: _typing.Optional[int] = None, num_hidden_units: _typing.List[int] = (32, 32)) -> None:
+    def __init__(self, dim_output: typing.Optional[int] = None, num_hidden_units: typing.List[int] = (32, 32)) -> None:
         """
         Args:
 
@@ -54,7 +53,7 @@ class FcNet(torch.nn.Module):
 class CNN(torch.nn.Module):
     """A simple convolutional module networks
     """
-    def __init__(self, dim_output: _typing.Optional[int] = None, bn_affine: bool = False) -> None:
+    def __init__(self, dim_output: typing.Optional[int] = None, bn_affine: bool = False, stride_flag: bool = True) -> None:
         """Initialize an instance
 
         Args:
@@ -67,10 +66,14 @@ class CNN(torch.nn.Module):
 
         self.dim_output = dim_output
         self.kernel_size = (3, 3)
-        self.stride = (2, 2)
-        self.padding = (1, 1)
+        if stride_flag:
+            self.stride = 2
+        else:
+            self.stride = 1
+        self.padding = 1
         self.num_channels = (32, 32, 32, 32)
         self.bn_affine = bn_affine
+        self.stride_flag = stride_flag
         self.cnn = self.construct_network()
     
     def construct_network(self) -> torch.nn.Module:
@@ -78,46 +81,51 @@ class CNN(torch.nn.Module):
 
         """
         net = torch.nn.Sequential()
-        net.add_module(
-            name='layer0',
-            module=torch.nn.Sequential(
-                torch.nn.LazyConv2d(
-                    out_channels=self.num_channels[0],
+        temp = torch.nn.Sequential(
+            torch.nn.LazyConv2d(
+                out_channels=self.num_channels[0],
+                kernel_size=self.kernel_size,
+                stride=self.stride,
+                padding=self.padding,
+                bias=not self.bn_affine
+            ),
+            torch.nn.BatchNorm2d(
+                num_features=self.num_channels[0],
+                momentum=1,
+                track_running_stats=False,
+                affine=self.bn_affine
+            ),
+            torch.nn.ReLU()
+        )
+        if not self.stride_flag:
+            temp.add_module(name="max-pool-0", module=torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
+
+        net.add_module(name='layer0', module=temp)
+
+        for i in range(1, len(self.num_channels)):
+            temp = torch.nn.Sequential(
+                torch.nn.Conv2d(
+                    in_channels=self.num_channels[i - 1],
+                    out_channels=self.num_channels[i],
                     kernel_size=self.kernel_size,
                     stride=self.stride,
                     padding=self.padding,
                     bias=not self.bn_affine
                 ),
                 torch.nn.BatchNorm2d(
-                    num_features=self.num_channels[0],
+                    num_features=self.num_channels[i],
                     momentum=1,
                     track_running_stats=False,
                     affine=self.bn_affine
                 ),
                 torch.nn.ReLU()
             )
-        )
+            if not self.stride_flag:
+                temp.add_module(name="max-pool-{0:d}".format(i), module=torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0))
 
-        for i in range(1, len(self.num_channels)):
             net.add_module(
                 name='layer{0:d}'.format(i),
-                module=torch.nn.Sequential(
-                    torch.nn.Conv2d(
-                        in_channels=self.num_channels[i - 1],
-                        out_channels=self.num_channels[i],
-                        kernel_size=self.kernel_size,
-                        stride=self.stride,
-                        padding=self.padding,
-                        bias=not self.bn_affine
-                    ),
-                    torch.nn.BatchNorm2d(
-                        num_features=self.num_channels[i],
-                        momentum=1,
-                        track_running_stats=False,
-                        affine=self.bn_affine
-                    ),
-                    torch.nn.ReLU()
-                )
+                module=temp
             )
 
         net.add_module(name='Flatten', module=torch.nn.Flatten(start_dim=1, end_dim=-1))
@@ -137,7 +145,7 @@ class CNN(torch.nn.Module):
 
 class ResNet18(torch.nn.Module):
     """A modified version of ResNet-18 that suits meta-learning"""
-    def __init__(self, dim_output: _typing.Optional[int] = None, bn_affine: bool = False) -> None:
+    def __init__(self, dim_output: typing.Optional[int] = None, bn_affine: bool = False) -> None:
         """
         Args:
             dim_output: the number of classes at the output. If None,
@@ -207,7 +215,7 @@ class ResNet18(torch.nn.Module):
         return self.net(x)
 
 class MiniCNN(torch.nn.Module):
-    def __init__(self, dim_output: _typing.Optional[int] = None, bn_affine: bool = False) -> None:
+    def __init__(self, dim_output: typing.Optional[int] = None, bn_affine: bool = False) -> None:
         """Initialize an instance
 
         Args:

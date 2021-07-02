@@ -32,7 +32,8 @@ class ProtoNet(MLBaseClass):
         if self.config['network_architecture'] == 'CNN':
             model["hyper_net"] = CNN(
                 dim_output=None,
-                bn_affine=self.config['batchnorm']
+                bn_affine=self.config['batchnorm'],
+                stride_flag=self.config['strided']
             )
         elif self.config['network_architecture'] == 'ResNet18':
             model["hyper_net"] = ResNet18(

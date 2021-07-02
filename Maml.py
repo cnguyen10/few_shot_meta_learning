@@ -38,7 +38,8 @@ class Maml(MLBaseClass):
         if self.config['network_architecture'] == 'CNN':
             base_net = CNN(
                 dim_output=self.config['min_way'],
-                bn_affine=self.config['batchnorm']
+                bn_affine=self.config['batchnorm'],
+                stride_flag=self.config['strided']
             )
         elif self.config['network_architecture'] == 'ResNet18':
             base_net = ResNet18(
