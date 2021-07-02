@@ -190,6 +190,9 @@ class MLBaseClass(object):
                     # -------------------------
                     loss_v = self.validation_loss(x=x_v, y=y_v, adapted_hyper_net=adapted_hyper_net, model=model)
 
+                    if torch.isnan(input=loss_v):
+                        raise ValueError("Loss is NaN.")
+
                     # calculate gradients w.r.t. hyper_net's parameters
                     loss_v.backward()
 
