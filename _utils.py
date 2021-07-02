@@ -176,6 +176,25 @@ def kl_divergence_gaussians(p: typing.List[torch.Tensor], q: typing.List[torch.T
 
     return kl_div
 
+def vector_to_list_parameters(vec: torch.Tensor, parameter_shapes: typing.List) -> torch.Tensor:
+    """
+    """
+    params = []
+
+    # Pointer for slicing the vector for each parameter
+    pointer = 0
+
+    for param_shape in parameter_shapes:
+        # The length of the parameter
+        num_param = np.prod(a=param_shape)
+
+        params.append(vec[pointer:pointer + num_param].view(param_shape))
+
+        # Increment the pointer
+        pointer += num_param
+    
+    return params
+
 def intialize_parameters(state_dict: dict) -> typing.List[torch.Tensor]:
     """"""
     p = list(state_dict.values())
