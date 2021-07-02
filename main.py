@@ -1,13 +1,13 @@
 """
 # MAML
-python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=MAML --num-models=1 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
 python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-# VAMPIRE
-python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=vampire --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+# VAMPIRE2
+python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=vampire --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
 
 # ABML
 python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
@@ -27,6 +27,7 @@ import argparse
 # from MetaLearning import MetaLearning
 from Maml import Maml
 from Vampire import Vampire
+from Vampire2 import Vampire2
 from Abml import Abml
 from ProtoNet import ProtoNet
 from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
@@ -47,7 +48,7 @@ parser.add_argument('--ml-algorithm', type=str, default='MAML', help='Few-shot l
 parser.add_argument('--first-order', dest='first_order', action='store_true')
 parser.add_argument('--no-first-order', dest='first_order', action='store_false')
 parser.set_defaults(first_order=True)
-parser.add_argument('--KL-weight', type=float, default=1e-6, help='Weighting factor for the KL divergence (only applicable for VAMPIRE)')
+parser.add_argument('--KL-weight', type=float, default=1e-5, help='Weighting factor for the KL divergence (only applicable for VAMPIRE)')
 
 parser.add_argument('--network-architecture', type=str, default='CNN', help='The base model used, including CNN and ResNet18 defined in CommonModels')
 
@@ -96,7 +97,7 @@ if not os.path.exists(path=config['logdir']):
     from pathlib import Path
     Path(config['logdir']).mkdir(parents=True, exist_ok=True)
 
-config['minibatch_print'] = np.lcm(config['minibatch'], 500)
+config['minibatch_print'] = np.lcm(config['minibatch'], 1000)
 
 config['device'] = torch.device('cuda:0' if torch.cuda.is_available() \
     else torch.device('cpu'))
@@ -124,6 +125,7 @@ if __name__ == "__main__":
     ml_algorithms = {
         'Maml': Maml,
         'Vampire': Vampire,
+        "Vampire2": Vampire2,
         'Abml': Abml,
         'Protonet': ProtoNet
     }
@@ -133,6 +135,20 @@ if __name__ == "__main__":
     ml = ml_algorithms[config['ml_algorithm'].capitalize()](config=config)
 
     if config['train_flag']:
-        ml.train(eps_generator=eps_generator)
+        # load validation set if existing
+        if os.path.exists(path=os.path.join(config["ds_folder"], config["datasource"], "val")):
+            eps_generator_val = EpisodeGeneratorClass(
+                root=os.path.join(config["ds_folder"], config["datasource"]),
+                train_subset="val",
+                suffix=config["suffix"],
+                min_num_cls=config["min_way"],
+                max_num_cls=config["max_way"],
+                k_shot=config["k_shot"] + config["v_shot"],
+                expand_dim=False,
+                load_images=config["load_images"]
+            )
+            ml.train(eps_generator=eps_generator, eps_generator_val=eps_generator_val)
+        else:
+            ml.train(eps_generator=eps_generator)
     else:
-        ml.evaluate(eps_generator=eps_generator)
+        ml.test(eps_generator=eps_generator)

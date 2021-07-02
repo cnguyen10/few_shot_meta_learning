@@ -14,49 +14,166 @@ class Maml(MLBaseClass):
 
         if self.config['min_way'] != self.config['max_way']:
             raise ValueError('MAML works with a fixed number of ways only.')
-        
-        self.config['num_models'] = 1 # overwrite number of models for speed
 
         self.hyper_net_class = IdentityNet
 
-    def load_model(self, resume_epoch: int = None, **kwargs) -> typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer]:
+    def load_model(self, resume_epoch: int = None, **kwargs) -> dict:
         """Initialize or load the hyper-net and base-net models
 
         Args:
             hyper_net_class: point to the hyper-net class of interest: IdentityNet for MAML or NormalVariationalNet for VAMPIRE
             resume_epoch: the index of the file containing the saved model
 
-        Returns: a tuple consisting of
+        Returns: a dictionray consisting of the following key-value pair:
             hypet_net: the hyper neural network
-            base_net: the base neural network
-            meta_opt: the optimizer for meta-parameter
+            f_base_net: the base neural network
+            optimizer: the optimizer for the parameter of the hyper-net
         """
-        return self.load_maml_like_model(resume_epoch=resume_epoch, **kwargs)
+        # initialize a dictionary containing the parameters of interst
+        model = dict.fromkeys(["hyper_net", "f_base_net", "optimizer"])
 
-    def adapt_and_predict(self, model: typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer], x_t: torch.Tensor, y_t: torch.Tensor, x_v: torch.Tensor, y_v: torch.Tensor) -> typing.Tuple[higher.patch._MonkeyPatchBase, typing.List[torch.Tensor]]:
-        """Adapt and predict the labels of the queried data
-        """
-        # -------------------------
-        # adapt on the support data
-        # -------------------------
-        f_base_net = self.torch_module_to_functional(torch_net=model[1])
-        f_hyper_net = self.adapt_to_episode(x=x_t, y=y_t, hyper_net=model[0], f_base_net=f_base_net, train_flag=True)
+        if resume_epoch is None:
+            resume_epoch = self.config['resume_epoch']
 
-        # -------------------------
-        # predict labels of queried data
-        # -------------------------
-        logits = self.predict(x=x_v, f_hyper_net=f_hyper_net, f_base_net=f_base_net)
+        if self.config['network_architecture'] == 'CNN':
+            base_net = CNN(
+                dim_output=self.config['min_way'],
+                bn_affine=self.config['batchnorm']
+            )
+        elif self.config['network_architecture'] == 'ResNet18':
+            base_net = ResNet18(
+                dim_output=self.config['min_way'],
+                bn_affine=self.config['batchnorm']
+            )
+        else:
+            raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
 
-        return f_hyper_net, logits
+        # ---------------------------------------------------------------
+        # run a dummy task to initialize lazy modules defined in base_net
+        # ---------------------------------------------------------------
+        eps_data = kwargs['eps_generator'].generate_episode(episode_name=None)
+        # split data into train and validation
+        xt, _, _, _ = train_val_split(X=eps_data, k_shot=self.config['k_shot'], shuffle=True)
+        # convert numpy data into torch tensor
+        x_t = torch.from_numpy(xt).float()
+        # run to initialize lazy modules
+        base_net(x_t)
 
-    def loss_extra(self, **kwargs) -> typing.Union[torch.Tensor, float]:
-        return 0.
+        params = torch.nn.utils.parameters_to_vector(parameters=base_net.parameters())
+        print('Number of parameters of the base network = {0:,}.\n'.format(params.numel()))
+
+        model["hyper_net"] = kwargs['hyper_net_class'](base_net=base_net)
+
+        # move to device
+        base_net.to(self.config['device'])
+        model["hyper_net"].to(self.config['device'])
+
+        # functional base network
+        model["f_base_net"] = self.torch_module_to_functional(torch_net=base_net)
+
+        # optimizer
+        model["optimizer"] = torch.optim.Adam(params=model["hyper_net"].parameters(), lr=self.config['meta_lr'])
+
+        # load model if there is saved file
+        if resume_epoch > 0:
+            # path to the saved file
+            checkpoint_path = os.path.join(self.config['logdir'], 'Epoch_{0:d}.pt'.format(resume_epoch))
+            
+            # load file
+            saved_checkpoint = torch.load(
+                f=checkpoint_path,
+                map_location=lambda storage,
+                loc: storage.cuda(self.config['device'].index) if self.config['device'].type == 'cuda' else storage
+            )
+
+            # load state dictionaries
+            model["hyper_net"].load_state_dict(state_dict=saved_checkpoint['hyper_net_state_dict'])
+            model["optimizer"].load_state_dict(state_dict=saved_checkpoint['opt_state_dict'])
+
+            # update learning rate
+            for param_group in model["optimizer"].param_groups:
+                if param_group['lr'] != self.config['meta_lr']:
+                    param_group['lr'] = self.config['meta_lr']
+
+        return model
+
+    def adaptation(self, x: torch.Tensor, y: torch.Tensor, model: dict) -> higher.patch._MonkeyPatchBase:
+        """See MLBaseClass for the description"""
+        # convert hyper_net to its functional form
+        f_hyper_net = higher.patch.monkeypatch(
+            module=model["hyper_net"],
+            copy_initial_weights=False,
+            track_higher_grads=self.config["train_flag"]
+        )
+
+        for _ in range(self.config['num_inner_updates']):
+            q_params = f_hyper_net.fast_params # parameters of the task-specific hyper_net
+
+            # generate task-specific parameter
+            base_net_params = f_hyper_net.forward()
+
+            # predict output logits
+            logits = model["f_base_net"].forward(x, params=base_net_params)
+
+            # calculate classification loss
+            loss = torch.nn.functional.cross_entropy(input=logits, target=y)
+
+            if self.config['first_order']:
+                grads = torch.autograd.grad(
+                    outputs=loss,
+                    inputs=q_params,
+                    retain_graph=True
+                )
+            else:
+                grads = torch.autograd.grad(
+                    outputs=loss,
+                    inputs=q_params,
+                    create_graph=True
+                )
+
+            new_q_params = []
+            for param, grad in zip(q_params, grads):
+                new_q_params.append(higher.optim._add(tensor=param, a1=-self.config['inner_lr'], a2=grad))
+
+            f_hyper_net.update_params(new_q_params)
+
+        return f_hyper_net
+
+    def prediction(self, x: torch.Tensor, adapted_hyper_net: higher.patch._MonkeyPatchBase, model: dict) -> torch.Tensor:
+        """See MLBaseClass for the description"""
+        # generate task-specific parameter
+        base_net_params = adapted_hyper_net.forward()
+
+        logits = model["f_base_net"].forward(x, params=base_net_params)
+
+        return logits
+
+    def validation_loss(self, x: torch.Tensor, y: torch.Tensor, adapted_hyper_net: higher.patch._MonkeyPatchBase, model: dict) -> torch.Tensor:
+        """See MLBaseClass for the description"""
+        logits = self.prediction(x=x, adapted_hyper_net=adapted_hyper_net, model=model)
+
+        loss = torch.nn.functional.cross_entropy(input=logits, target=y)
+
+        return loss
+
+    def evaluation(self, x_t: torch.Tensor, y_t: torch.Tensor, x_v: torch.Tensor, y_v: torch.Tensor, model: dict) -> typing.Tuple[float, float]:
+        """See MLBaseClass for the description"""
+        adapted_hyper_net = self.adaptation(x=x_t, y=y_t, model=model)
+        
+        logits = self.prediction(x=x_v, adapted_hyper_net=adapted_hyper_net, model=model)
+
+        loss = torch.nn.functional.cross_entropy(input=logits, target=y_v)
+
+        accuracy = (logits.argmax(dim=1) == y_v).float().mean().item()
+
+        return loss.item(), accuracy * 100
 
     @staticmethod
-    def KL_divergence(**kwargs) -> typing.Union[torch.Tensor, float]:
-        return 0.
-    
-    def loss_prior(self, model: typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer], **kwargs) -> typing.Union[torch.Tensor, float]:
-        """Loss prior or regularization for the meta-parameter
+    def torch_module_to_functional(torch_net: torch.nn.Module) -> higher.patch._MonkeyPatchBase:
+        """Convert a conventional torch module to its "functional" form
         """
-        return 0.
+        f_net = higher.patch.make_functional(module=torch_net)
+        f_net.track_higher_grads = False
+        f_net._fast_params = [[]]
+
+        return f_net

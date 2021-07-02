@@ -1,3 +1,4 @@
+from numpy import mod
 import torch
 import higher
 import typing
@@ -13,33 +14,34 @@ class ProtoNet(MLBaseClass):
 
         self.hyper_net_class = None # dummy to match with MAML and VAMPIRE
 
-    def load_model(self, resume_epoch: int = None, **kwargs) -> typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer]:
+    def load_model(self, resume_epoch: int = None, **kwargs) -> dict:
         """Initialize or load the protonet and its optimizer
 
         Args:
             resume_epoch: the index of the file containing the saved model
 
-        Returns: a tuple consisting of
+        Returns: a dictionary consisting of
             protonet: the prototypical network
-            base_net: dummy to match with MAML and VAMPIRE
-            opt: the optimizer for the prototypical network
+            optimizer: the optimizer for the prototypical network
         """
+        model = dict.fromkeys((["hyper_net", "optimizer"]))
+
         if resume_epoch is None:
             resume_epoch = self.config['resume_epoch']
 
         if self.config['network_architecture'] == 'CNN':
-            protonet = CNN(
+            model["hyper_net"] = CNN(
                 dim_output=None,
                 bn_affine=self.config['batchnorm']
             )
         elif self.config['network_architecture'] == 'ResNet18':
-            protonet = ResNet18(
+            model["hyper_net"] = ResNet18(
                 dim_output=None,
                 bn_affine=self.config['batchnorm']
             )
         else:
             raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
-        
+
         # ---------------------------------------------------------------
         # run a dummy task to initialize lazy modules defined in base_net
         # ---------------------------------------------------------------
@@ -49,13 +51,16 @@ class ProtoNet(MLBaseClass):
         # convert numpy data into torch tensor
         x_t = torch.from_numpy(xt).float()
         # run to initialize lazy modules
-        protonet(x_t)
+        model["hyper_net"](x_t)
+
+        params = torch.nn.utils.parameters_to_vector(parameters=model["hyper_net"].parameters())
+        print('Number of parameters of the base network = {0:,}.\n'.format(params.numel()))
 
         # move to device
-        protonet.to(self.config['device'])
+        model["hyper_net"].to(self.config['device'])
 
         # optimizer
-        opt = torch.optim.Adam(params=protonet.parameters(), lr=self.config['meta_lr'])
+        model["optimizer"] = torch.optim.Adam(params=model["hyper_net"].parameters(), lr=self.config['meta_lr'])
 
         # load model if there is saved file
         if resume_epoch > 0:
@@ -70,42 +75,44 @@ class ProtoNet(MLBaseClass):
             )
 
             # load state dictionaries
-            protonet.load_state_dict(state_dict=saved_checkpoint['hyper_net_state_dict'])
-            opt.load_state_dict(state_dict=saved_checkpoint['opt_state_dict'])
+            model["hyper_net"].load_state_dict(state_dict=saved_checkpoint['hyper_net_state_dict'])
+            model["optimizer"].load_state_dict(state_dict=saved_checkpoint['opt_state_dict'])
 
             # update learning rate
-            for param_group in opt.param_groups:
+            for param_group in model["optimizer"].param_groups:
                 if param_group['lr'] != self.config['meta_lr']:
                     param_group['lr'] = self.config['meta_lr']
 
-        return protonet, None, opt
+        return model
 
-    def adapt_and_predict(self, model: typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer], x_t: torch.Tensor, y_t: torch.Tensor, x_v: torch.Tensor, y_v: torch.Tensor) -> typing.Tuple[higher.patch._MonkeyPatchBase, typing.List[torch.Tensor]]:
-        """Adapt and predict the labels of the queried data
+    def adaptation(self, x: torch.Tensor, y: torch.Tensor, model: dict) -> higher.patch._MonkeyPatchBase:
+        """Calculate the prototype of each class
         """
-        # -------------------------
-        # adapt to task by calculating prototypes
-        # -------------------------
-        z_t = model[0].forward(x_t) # embed data into the latent space
-        cls_prototypes = get_cls_prototypes(x=z_t, y=y_t)
+        z = model["hyper_net"].forward(x) # embed data into the latent space
+        cls_prototypes = get_cls_prototypes(x=z, y=y)
 
-        # -------------------------
-        # predict labels of queried data
-        # -------------------------
-        z_v = model[0].forward(x_v)
-        distance_matrix = euclidean_distance(matrixN=z_v, matrixM=cls_prototypes)
-        logits = [-distance_matrix]
+        return cls_prototypes
 
-        return None, logits
+    def prediction(self, x: torch.Tensor, adapted_hyper_net: torch.Tensor, model: dict) -> torch.Tensor:
+        z = model["hyper_net"].forward(x)
+        distance_matrix = euclidean_distance(matrixN=z, matrixM=adapted_hyper_net)
+        logits = -distance_matrix
 
-    def loss_extra(self, **kwargs) -> typing.Union[torch.Tensor, float]:
-        return 0.
+        return logits
 
-    @staticmethod
-    def KL_divergence(**kwargs) -> typing.Union[torch.Tensor, float]:
-        return 0.
-    
-    def loss_prior(self, model: typing.Tuple[torch.nn.Module, typing.Optional[higher.patch._MonkeyPatchBase], torch.optim.Optimizer], **kwargs) -> typing.Union[torch.Tensor, float]:
-        """Loss prior or regularization for the meta-parameter
-        """
-        return 0.
+    def validation_loss(self, x: torch.Tensor, y: torch.Tensor, adapted_hyper_net: torch.Tensor, model: dict) -> torch.Tensor:
+        logits = self.prediction(x=x, adapted_hyper_net=adapted_hyper_net, model=model)
+        loss = torch.nn.functional.cross_entropy(input=logits, target=y)
+
+        return loss
+
+    def evaluation(self, x_t: torch.Tensor, y_t: torch.Tensor, x_v: torch.Tensor, y_v: torch.Tensor, model: dict) -> typing.Tuple[float, float]:
+        class_prototypes = self.adaptation(x=x_t, y=y_t, model=model)
+
+        logits = self.prediction(x=x_v, adapted_hyper_net=class_prototypes, model=model)
+
+        loss = torch.nn.functional.cross_entropy(input=logits, target=y_v)
+
+        accuracy = (logits.argmax(dim=1) == y_v).float().mean().item()
+
+        return loss.item(), accuracy * 100
