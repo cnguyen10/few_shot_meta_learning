@@ -3,7 +3,8 @@ import higher
 import typing
 
 from MLBaseClass import MLBaseClass
-from _utils import kl_divergence_gaussians, NormalVariationalNet
+from _utils import kl_divergence_gaussians
+from HyperNetClasses import NormalVariationalNet
 from Maml import Maml
 
 class Vampire(MLBaseClass):

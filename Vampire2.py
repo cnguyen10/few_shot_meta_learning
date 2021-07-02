@@ -3,7 +3,7 @@ import higher
 import typing
 
 from MLBaseClass import MLBaseClass
-from _utils import NormalVariationalNet
+from HyperNetClasses import NormalVariationalNet
 from Maml import Maml
 
 class Vampire2(MLBaseClass):

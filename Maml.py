@@ -4,7 +4,7 @@ import typing
 import os
 
 from MLBaseClass import MLBaseClass
-from _utils import IdentityNet
+from HyperNetClasses import IdentityNet
 from CommonModels import CNN, ResNet18
 from _utils import train_val_split
 

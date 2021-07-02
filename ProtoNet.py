@@ -1,4 +1,3 @@
-from numpy import mod
 import torch
 import higher
 import typing
