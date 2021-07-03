@@ -49,7 +49,7 @@ class OmniglotLoader(object):
     def __init__(
         self,
         root: str = folder,
-        train_subset: bool = True,
+        train_subset: str = "train",
         suffix: str = '.png',
         min_num_cls: int = 5,
         max_num_cls: int = 20,
@@ -78,7 +78,10 @@ class OmniglotLoader(object):
 
         Returns: an OmniglotLoader instance
         """
-        self.root = os.path.join(root, 'images_background' if train_subset else 'images_evaluation')
+        if (train_subset == "train"):
+            self.root = os.path.join(root, "images_background")
+        elif (train_subset == "test"):
+            self.root = os.path.join(root, "images_evaluation")
         self.suffix = suffix
         self.min_num_cls = min_num_cls
         self.max_num_cls = max_num_cls
@@ -152,7 +155,7 @@ class ImageFolderGenerator(object):
     def __init__(
         self,
         root: str,
-        train_subset: bool = True,
+        train_subset: str = "train",
         suffix: str = '.jpg',
         min_num_cls: int = 5,
         max_num_cls: int = 20,
@@ -177,7 +180,7 @@ class ImageFolderGenerator(object):
             xml_url (str): location of the XML structure
 
         """
-        self.root = os.path.join(root, 'train' if train_subset else 'test')
+        self.root = os.path.join(root, train_subset)
         self.suffix = suffix
         self.k_shot = k_shot
         self.expand_dim = expand_dim

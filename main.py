@@ -120,9 +120,14 @@ if __name__ == "__main__":
     else:
         raise ValueError('Unknown dataset')
 
+    if config["train_flag"]:
+        train_subset = "train"
+    else:
+        train_subset = "test"
+
     eps_generator = EpisodeGeneratorClass(
         root=os.path.join(config['ds_folder'], config['datasource']),
-        train_subset=config['train_flag'],
+        train_subset=train_subset,
         suffix=config['suffix'],
         min_num_cls=config['min_way'],
         max_num_cls=config['max_way'],
