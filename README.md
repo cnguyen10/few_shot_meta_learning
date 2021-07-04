@@ -1,29 +1,29 @@
 # Few-shot meta-learning
 This repository contains the implementations of many meta-learning algorithms to solve the few-shot learning problem in PyTorch, including:
 - [Model-Agnostic Meta-Learning (MAML)](http://proceedings.mlr.press/v70/finn17a/finn17a.pdf)
-- ~~[Probabilistic Model-Agnostic Meta-Learning (PLATIPUS)](https://papers.nips.cc/paper/8161-probabilistic-model-agnostic-meta-learning.pdf)~~
+- [Probabilistic Model-Agnostic Meta-Learning (PLATIPUS)](https://papers.nips.cc/paper/8161-probabilistic-model-agnostic-meta-learning.pdf)
 - [Prototypical Networks (protonet)](http://papers.nips.cc/paper/6996-prototypical-networks-for-few-shot-learning.pdf)
-- [Bayesian Model-Agnostic Meta-Learning (BMAML)](https://papers.nips.cc/paper/7963-bayesian-model-agnostic-meta-learning.pdf)
+- [Bayesian Model-Agnostic Meta-Learning (BMAML)](https://papers.nips.cc/paper/7963-bayesian-model-agnostic-meta-learning.pdf) (without Chaser loss)
 - [Amortized Bayesian Meta-Learning](https://openreview.net/pdf?id=rkgpy3C5tX)
 - [Uncertainty in Model-Agnostic Meta-Learning using Variational Inference (VAMPIRE)](http://openaccess.thecvf.com/content_WACV_2020/papers/Nguyen_Uncertainty_in_Model-Agnostic_Meta-Learning_using_Variational_Inference_WACV_2020_paper.pdf)
 
 ## Python package requirements
-- PyTorch __1.8.1__ (which introduces a new module called "Lazy", corresponding to the Dense layer in Tensorflow)
+- PyTorch __1.8.1__ or above (which introduces a new module called "Lazy", corresponding to the Dense layer in Tensorflow)
 - [higher][higher repo]
 
 ## New updates with functional form of torch module
-What does "functional" mean? It is similar to the module `torch.nn.functional`, where the parameters can be handled explicitly, not implicitly as in PyTorch `torch.nn.Sequential()`. For example, one can construct a 2-hidden-layer fully-connected neural network from PyTorch under `fc_model`:
+What does "functional" mean? It is similar to the module `torch.nn.functional`, where the parameters can be handled explicitly, not implicitly as in PyTorch `torch.nn.Sequential()`. For example:
 ```python
 # conventional with implicitly-handled parameter
-y = fc_model(x) # parameters are handled by PyTorch implicitly
+y = net(x) # parameters are handled by PyTorch implicitly
 
 # functional form
-y = fc_model(x, theta) # theta is the parameter and fc_model is the functional.
+y = functional_net(x, params=theta) # theta is the parameter
 ```
 
-With the current PyTorch, one needs to manually implement the "functional" form of every component of the model of interest via `torch.nn.functional`. This is, however, inconvenient when changing the network architecture.
+With the current PyTorch, one needs to manually implement the "functional" form of every component of the model of interest via `torch.nn.functional`. This is, however, inconvenient when changing network architecture.
 
-Fortunately, Facebook Research has developed [__higher__][higher repo] - a library that can easily convert any "conventional" neural network into its "functional" form. For example:
+Fortunately, Facebook Research has developed [__higher__][higher repo] - a library that can easily convert any "conventional" neural network into its "functional" form to handle parameter explicitly. For example:
 ```python
 # define a network
 resnet18 = torchvision.models.resnet18(pretrain=False)
@@ -44,11 +44,11 @@ new_params = update_parameter(params)
 y2 = f_resnet18.forward(x=x2, params=new_params)
 ```
 
-Hence, we only need to load or specify the "conventional" model written in PyTorch without manually re-implementing its "functional" form. I have made a few common models in `CommonModels.py`, so that we can load them to use immediately.
+Hence, we only need to load or specify the "conventional" model written in PyTorch without manually re-implementing its "functional" form. A few common models are implemented in `CommonModels.py`.
 
 Although [__higher__][higher repo] provides convenient APIs to track gradients, it does not allow us to use the "first-order" approximate, resulting in more memory and longer training time. I have created a work-around solution to enable the "first-order" approximation, and controlled this by setting `--first-order=True` when running the code.
 
-Current update is available for most popular algorithms, including MAML, ABML, VAMPIRE and ProtoNet. The implementation is based on the abstract base class `MLBaseClass.py`, and each of the algorithms is written in a separated class. The main program is specified in `main.py`. I will try to update for regression soon.
+Majority of the implementation is based on the abstract base class `MLBaseClass.py`, and each of the algorithms is written in a separated class. The main program is specified in `main.py`. PLATIPUS is slightly different since the algorithm mixes between `training` and `validation` subset, and hence, implemented in a separated file.
 
 ## Operation mechanism explanation
 The implementation is mainly in the abstract base class `MLBaseClass.py` with some auxilliary classes and functions in `_utils.py`. The operation principle of the implementation can be divided into 3 steps:
@@ -106,7 +106,7 @@ Note that ABML is slightly different since it also includes the loss made by the
 
 ## Data source
 ### Regression
-The data source for regression is generated from `DataGeneratorT.py`. Currently, regression has not been implemented yet.
+Currently, regression has not been implemented yet.
 
 ### Classification
 Initially, Omniglot and mini-ImageNet are the two datasets considered. They are organized following the `torchvision.datasets.ImageFolder`.
@@ -117,21 +117,17 @@ Dataset
 ...
 |__alphabetn_characterm (or classz)
 ```
-If this your setup, please modify the code to use `ImageFolderGenerator` as the `eps_generator`.
+If this your setup, the class `ImageFolderGenerator` is ready to use.
 
-You can also keep the original structure of Omniglot (train -> alphabets -> characters), and directly run the code without modification. I had this setup in mind when coding the implementation.
+If the original structure of Omniglot (train -> alphabets -> characters) is your desire, the class `OmniglotLoader` is what you need.
 
-For the extracted feature, which I call `miniImageNet_640`, the train-test split is in pickle format. Each pickle file consists of a tuple `all_class, all_data`, where:
+<!-- For the extracted feature, which I call `miniImageNet_640`, the train-test split is in pickle format. Each pickle file consists of a tuple `all_class, all_data`, where:
 - `all_class` is a dictionary where keys are the names of classes, and the values are their corresponding names of images belong to those classes,
 - `all_data` is also a dictionary where keys are the names of all images, and values are the vector values of the corresponding images.
 
-You can also download [the resized Omniglot](https://www.dropbox.com/s/w1do3wi0wzzo4jw/omniglot.zip?dl=0) and [the miniImageNet with extracted features](https://www.dropbox.com/s/z48ioy2s2bjbu93/miniImageNet_640.zip?dl=0) from my shared Dropbox. Please note that the extracted features of miniImageNet dataset is done by the authors of LEO nets from DeepMind. The one from my Dropbox is a modified version with scaling and putting into a proper data structure for the ease of use.
+You can also download [the resized Omniglot](https://www.dropbox.com/s/w1do3wi0wzzo4jw/omniglot.zip?dl=0) and [the miniImageNet with extracted features](https://www.dropbox.com/s/z48ioy2s2bjbu93/miniImageNet_640.zip?dl=0) from my shared Dropbox. Please note that the extracted features of miniImageNet dataset is done by the authors of LEO nets from DeepMind. The one from my Dropbox is a modified version with scaling and putting into a proper data structure for the ease of use. -->
 
 ## Run
-Before running, please go to each script and modify the path to save the files by looking for `logdir`. This is the destination location to save models.
-
-For the legacy implementation such as BMAML, please go to the `utils.py` and modify the default dataset folders (or you can do it by passing the corresponding argument in the `load_dataset` function). The epoch here is locally defined through `expected_total_tasks_per_epoch` tasks (e.g. 10k tasks = 1 epoch), and therefore, different from the definition of epoch in conventional machine learning.
-
 To run, copy and paste the command at the beginning of each algorithm script and change the configurable parameters (if needed).
 
 To test, simply specify which saved model is used via variable `resume_epoch` and replace `--train` by `--test` at the end of the commands found on the top of `main.py`.
@@ -152,13 +148,5 @@ If you only need to run MAML and feel that my implementation is complicated, [to
 If you feel this repository useful, please give a :star: to motivate my work.
 
 In addition, please consider to give a :star: to the [__higher__][higher repo] repository developed by Facebook. Without it, we still suffer from the arduous re-implementation of model "functional" form.
-
----
-(legacy)
-
-## Test
-The command for testing is slightly different from running. This can be done by provide the file (or epoch) we want to test through `resume_epoch=xx`, where `xx` is the id of the file. It is followed by the parameter `--test`, and:
-- `--no_uncertainty`: quanlitative result in regression, or output the accuracy of each task in classification,
-- `--uncertainty`: outputs a csv-file with accuracy and prediction class probability of each image. This will be then used to calculate the calibration error.
 
 [higher repo]: https://github.com/facebookresearch/higher
