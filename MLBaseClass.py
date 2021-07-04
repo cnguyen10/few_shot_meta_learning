@@ -211,7 +211,7 @@ class MLBaseClass(object):
                             # calculate step for Tensorboard Summary Writer
                             global_step = (epoch_id * self.config['num_episodes_per_epoch'] + eps_count + 1) // self.config['minibatch_print']
 
-                            tb_writer.add_scalar(tag="Training Loss", scalar_value=loss_monitor, global_step=global_step)
+                            tb_writer.add_scalar(tag="Train_Loss", scalar_value=loss_monitor, global_step=global_step)
 
                             # reset monitoring variables
                             loss_monitor = 0.
@@ -226,8 +226,8 @@ class MLBaseClass(object):
                                     model=model
                                 )
 
-                                tb_writer.add_scalar(tag="Validation Loss", scalar_value=np.mean(loss_temp), global_step=global_step)
-                                tb_writer.add_scalar(tag="Validation Accuracy", scalar_value=np.mean(accuracy_temp), global_step=global_step)
+                                tb_writer.add_scalar(tag="Val_NLL", scalar_value=np.mean(loss_temp), global_step=global_step)
+                                tb_writer.add_scalar(tag="Val_Accuracy", scalar_value=np.mean(accuracy_temp), global_step=global_step)
 
                                 del loss_temp
                                 del accuracy_temp
