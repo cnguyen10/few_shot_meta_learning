@@ -189,6 +189,7 @@ class MLBaseClass(object):
                     # loss on validation subset
                     # -------------------------
                     loss_v = self.validation_loss(x=x_v, y=y_v, adapted_hyper_net=adapted_hyper_net, model=model)
+                    loss_v = loss_v / self.config["minibatch"]
 
                     if torch.isnan(input=loss_v):
                         raise ValueError("Loss is NaN.")
@@ -206,7 +207,7 @@ class MLBaseClass(object):
 
                         # monitoring
                         if (eps_count + 1) % self.config['minibatch_print'] == 0:
-                            loss_monitor /= self.config['minibatch_print']
+                            loss_monitor = loss_monitor * self.config["minibatch"] / self.config["minibatch_print"]
 
                             # calculate step for Tensorboard Summary Writer
                             global_step = (epoch_id * self.config['num_episodes_per_epoch'] + eps_count + 1) // self.config['minibatch_print']
