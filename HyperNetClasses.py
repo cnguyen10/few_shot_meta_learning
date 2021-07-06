@@ -12,7 +12,7 @@ class IdentityNet(torch.nn.Module):
 
         params = intialize_parameters(state_dict=base_state_dict)
 
-        self.params = torch.nn.ParameterList([torch.nn.Parameter(p) \
+        self.params = torch.nn.ParameterList([torch.nn.Parameter(p.float()) \
             for p in params])
         self.identity = torch.nn.Identity()
 
@@ -94,3 +94,61 @@ class EnsembleNet(torch.nn.Module):
 
     def forward(self, i: int) -> typing.List[torch.Tensor]:
         return vector_to_list_parameters(vec=self.params[i], parameter_shapes=self.parameter_shapes)
+
+class PlatipusNet(torch.nn.Module):
+    """A class to hold meta-parameters used in PLATIPUS algorithm
+
+    Meta-parameters include:
+        - mu_theta
+        - log_sigma_theta
+        - log_v_q - note that, here v_q is the "std", not the covariance as in the paper.
+        One can simply square it and get the one in the paper.
+        - learning rate: gamma_p
+        - learning rate: gamma_q
+    
+    Note: since the package "higher" is designed to handle ParameterList,
+    the implementation requires to keep the order of such parameters mentioned above.
+    This is annoying, but hopefully, the authors of "higher" could extend to handle
+    ParameterDict.
+    """
+
+    def __init__(self, base_net: torch.nn.Module, **kwargs) -> None:
+        super().__init__()
+
+        # dict of parameters of based network
+        base_state_dict = base_net.state_dict()
+
+        # add shapes of parameters into self
+        self.parameter_shapes = []
+        self.num_base_params = 0
+        for param in base_state_dict.values():
+            self.parameter_shapes.append(param.shape)
+            self.num_base_params += np.prod(param.shape)
+
+        # initialize ParameterList
+        self.params = torch.nn.ParameterList(parameters=None)
+
+        # add parameters into ParameterList
+        self.params.append(parameter=torch.nn.Parameter(data=torch.randn(size=(self.num_base_params,))))
+        self.params.append(parameter=torch.nn.Parameter(data=torch.randn(size=(self.num_base_params,)) - 4))
+        self.params.append(parameter=torch.nn.Parameter(data=torch.randn(size=(self.num_base_params,)) - 4))
+        # for _ in ("mu_theta", "log_sigma_theta", "log_v_q"):
+        #     params_list = intialize_parameters(state_dict=base_state_dict)
+        #     params_vec = torch.nn.utils.parameters_to_vector(parameters=params_list) - 4 # flattened tensor
+        #     self.params.append(parameter=torch.nn.Parameter(data=params_vec))
+        
+        self.params.append(parameter=torch.nn.Parameter(data=torch.tensor(0.01))) # gamma_p
+        self.params.append(parameter=torch.nn.Parameter(data=torch.tensor(0.01))) # gamma_q
+
+    def forward(self) -> dict:
+        """Generate a dictionary consisting of meta-paramters
+        """
+        meta_params = dict.fromkeys(("mu_theta", "log_sigma_theta", "log_v_q", "gamma_p", "gamma_q"))
+
+        meta_params["mu_theta"] = vector_to_list_parameters(vec=self.params[0], parameter_shapes=self.parameter_shapes)
+        meta_params["log_sigma_theta"] = vector_to_list_parameters(vec=self.params[1], parameter_shapes=self.parameter_shapes)
+        meta_params["log_v_q"] = vector_to_list_parameters(vec=self.params[2], parameter_shapes=self.parameter_shapes)
+        meta_params["gamma_p"] = self.params[3]
+        meta_params["gamma_q"] = self.params[4]
+
+        return meta_params
