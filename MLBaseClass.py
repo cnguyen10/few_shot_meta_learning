@@ -35,6 +35,7 @@ config['ml_algorithm'] = 'maml' # either: maml and vampire
 config['first_order'] = True # applicable for MAML-like algorithms
 config['num_models'] = 1 # number of models used in Monte Carlo to approximate expectation
 config['KL_weight'] = 1e-4
+config['dropout_prob'] = 0.2
 
 # Task-related
 config['max_way'] = 5
@@ -221,6 +222,9 @@ class MLBaseClass(object):
                             # Validation
                             # -------------------------
                             if ("eps_generator_val" in kwargs):
+                                # turn on EVAL mode to disable dropout
+                                model["f_base_net"].eval()
+
                                 loss_temp, accuracy_temp = self.evaluate(
                                     eps=[None] * self.config["num_episodes"],
                                     eps_generator=kwargs["eps_generator_val"],
@@ -230,6 +234,7 @@ class MLBaseClass(object):
                                 tb_writer.add_scalar(tag="Val_NLL", scalar_value=np.mean(loss_temp), global_step=global_step)
                                 tb_writer.add_scalar(tag="Val_Accuracy", scalar_value=np.mean(accuracy_temp), global_step=global_step)
 
+                                model["f_base_net"].train()
                                 del loss_temp
                                 del accuracy_temp
 

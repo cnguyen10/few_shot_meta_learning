@@ -3,6 +3,8 @@ import higher
 import typing
 import os
 
+from torch.nn.modules import dropout
+
 from MLBaseClass import MLBaseClass
 from HyperNetClasses import IdentityNet
 from CommonModels import CNN, ResNet18
@@ -44,7 +46,8 @@ class Maml(MLBaseClass):
         elif self.config['network_architecture'] == 'ResNet18':
             base_net = ResNet18(
                 dim_output=self.config['min_way'],
-                bn_affine=self.config['batchnorm']
+                bn_affine=self.config['batchnorm'],
+                dropout_prob=self.config["dropout_prob"]
             )
         else:
             raise NotImplementedError('Network architecture is unknown. Please implement it in the CommonModels.py.')
@@ -71,6 +74,12 @@ class Maml(MLBaseClass):
 
         # functional base network
         model["f_base_net"] = self.torch_module_to_functional(torch_net=base_net)
+
+        # add running_mean and running_var for BatchNorm2d
+        for m in model["f_base_net"].modules():
+            if isinstance(m, torch.nn.BatchNorm2d):
+                m.running_mean = None
+                m.running_var = None
 
         # optimizer
         model["optimizer"] = torch.optim.Adam(params=model["hyper_net"].parameters(), lr=self.config['meta_lr'])

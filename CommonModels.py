@@ -145,7 +145,7 @@ class CNN(torch.nn.Module):
 
 class ResNet18(torch.nn.Module):
     """A modified version of ResNet-18 that suits meta-learning"""
-    def __init__(self, dim_output: typing.Optional[int] = None, bn_affine: bool = False) -> None:
+    def __init__(self, dim_output: typing.Optional[int] = None, bn_affine: bool = False, **kwargs) -> None:
         """
         Args:
             dim_output: the number of classes at the output. If None,
@@ -156,6 +156,8 @@ class ResNet18(torch.nn.Module):
         # self.input_channel = input_channel
         self.dim_output = dim_output
         self.bn_affine = bn_affine
+        self.dropout_prob = kwargs["dropout_prob"]
+
         self.net = self.modified_resnet18()
 
     def modified_resnet18(self):
@@ -172,7 +174,7 @@ class ResNet18(torch.nn.Module):
             bias=not self.bn_affine
         )
 
-        # update batch norm for meta-learning by setting momentum to 1
+        # update batch norm for meta-learning by setting momentum to 1 and no track_running_stats
         net.bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
 
         net.layer1[0].bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
@@ -207,6 +209,12 @@ class ResNet18(torch.nn.Module):
             net.fc = torch.nn.LazyLinear(out_features=self.dim_output)
         else:
             net.fc = torch.nn.Identity()
+        
+        # add dropout-2d after layers 1, 2, and 3
+        net.layer1.add_module(name="dropout2d", module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer2.add_module(name="dropout2d", module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer3.add_module(name="dropout2d", module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer4.add_module(name="dropout2d", module=torch.nn.Dropout2d(p=self.dropout_prob))
 
         return net
 
