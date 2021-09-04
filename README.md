@@ -109,7 +109,7 @@ Note that ABML is slightly different since it also includes the loss made by the
 Currently, regression has not been implemented yet.
 
 ### Classification
-Initially, Omniglot and mini-ImageNet are the two datasets considered. They are organized following the `torchvision.datasets.ImageFolder`.
+Omniglot and mini-ImageNet are the two datasets considered. They are organized following the `torchvision.datasets.ImageFolder`.
 ```
 Dataset
 │__alphabet1_character1 (or class1)
@@ -117,15 +117,11 @@ Dataset
 ...
 |__alphabetn_characterm (or classz)
 ```
-If this your setup, the class `ImageFolderGenerator` is ready to use.
+You can modify the `transformations` in `main.py` to fit your need about image sizes or image normalization.
 
-If the original structure of Omniglot (train -> alphabets -> characters) is your desire, the class `OmniglotLoader` is what you need.
+The implementation replies on `torch.utils.data.DataLoader` with customized `EpisodeSampler.py` to generate data for each task. The implementation also support loading multiple datasets by appending `--datasource dataset_name --datasource another_dataset_name` in the input arguments.
 
-<!-- For the extracted feature, which I call `miniImageNet_640`, the train-test split is in pickle format. Each pickle file consists of a tuple `all_class, all_data`, where:
-- `all_class` is a dictionary where keys are the names of classes, and the values are their corresponding names of images belong to those classes,
-- `all_data` is also a dictionary where keys are the names of all images, and values are the vector values of the corresponding images.
-
-You can also download [the resized Omniglot](https://www.dropbox.com/s/w1do3wi0wzzo4jw/omniglot.zip?dl=0) and [the miniImageNet with extracted features](https://www.dropbox.com/s/z48ioy2s2bjbu93/miniImageNet_640.zip?dl=0) from my shared Dropbox. Please note that the extracted features of miniImageNet dataset is done by the authors of LEO nets from DeepMind. The one from my Dropbox is a modified version with scaling and putting into a proper data structure for the ease of use. -->
+If the original structure of Omniglot (train -> alphabets -> characters) is desired, you might need to append the list of all alphabet names to `config['datasource']`.
 
 ## Run
 To run, copy and paste the command at the beginning of each algorithm script and change the configurable parameters (if needed).
