@@ -155,7 +155,6 @@ if __name__ == "__main__":
 
     ml_algorithms = {
         'Maml': Maml,
-        'Vampire': Vampire,
         "Vampire2": Vampire2,
         'Abml': Abml,
         "Bmaml": Bmaml,
