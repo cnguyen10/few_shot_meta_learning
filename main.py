@@ -28,7 +28,6 @@ import argparse
 
 # from MetaLearning import MetaLearning
 from Maml import Maml
-from Vampire import Vampire
 from Vampire2 import Vampire2
 from Abml import Abml
 from Bmaml import Bmaml
