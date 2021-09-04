@@ -13,7 +13,7 @@ class ProtoNet(MLBaseClass):
 
         self.hyper_net_class = None # dummy to match with MAML and VAMPIRE
 
-    def load_model(self, resume_epoch: int = None, **kwargs) -> dict:
+    def load_model(self, resume_epoch: int, eps_dataloader: torch.utils.data.DataLoader, **kwargs) -> dict:
         """Initialize or load the protonet and its optimizer
 
         Args:
@@ -45,13 +45,13 @@ class ProtoNet(MLBaseClass):
         # ---------------------------------------------------------------
         # run a dummy task to initialize lazy modules defined in base_net
         # ---------------------------------------------------------------
-        eps_data = kwargs['eps_generator'].generate_episode(episode_name=None)
-        # split data into train and validation
-        xt, _, _, _ = train_val_split(X=eps_data, k_shot=self.config['k_shot'], shuffle=True)
-        # convert numpy data into torch tensor
-        x_t = torch.from_numpy(xt).float()
-        # run to initialize lazy modules
-        model["hyper_net"](x_t)
+        for eps_data in eps_dataloader:
+            # split data into train and validation
+            split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+
+            # run to initialize lazy modules
+            model["hyper_net"].forward(split_data['x_t'])
+            break
 
         params = torch.nn.utils.parameters_to_vector(parameters=model["hyper_net"].parameters())
         print('Number of parameters of the base network = {0:,}.\n'.format(params.numel()))
@@ -70,8 +70,7 @@ class ProtoNet(MLBaseClass):
             # load file
             saved_checkpoint = torch.load(
                 f=checkpoint_path,
-                map_location=lambda storage,
-                loc: storage.cuda(self.config['device'].index) if self.config['device'].type == 'cuda' else storage
+                map_location=lambda storage, loc: storage.cuda(self.config['device'].index) if self.config['device'].type == 'cuda' else storage
             )
 
             # load state dictionaries
@@ -82,6 +81,8 @@ class ProtoNet(MLBaseClass):
             for param_group in model["optimizer"].param_groups:
                 if param_group['lr'] != self.config['meta_lr']:
                     param_group['lr'] = self.config['meta_lr']
+            
+        model['f_base_net'] = model['hyper_net']
 
         return model
 

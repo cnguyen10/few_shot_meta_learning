@@ -1,31 +1,27 @@
 """
 # MAML
-python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
-
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --num-epochs=1 --resume-epoch=1 --train
 
 # VAMPIRE2
-python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
-
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # ABML
-python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
-
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # PLATIPUS
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=platipus --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --ml-algorithm=platipus --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # BMAML
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=bmaml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --no-strided --min-way=5 --max-way=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --ml-algorithm=bmaml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --no-strided --num-ways=5 --num-epochs=100 --resume-epoch=0 --train
 
 # PROTONET
-python3 main.py --datasource=omniglot-py --suffix=png --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --num-epochs=100 --resume-epoch=0 --train
-
-python3 main.py --datasource=miniImageNet --suffix=jpg --load-images --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --min-way=5 --max-way=10 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource=miniImageNet --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 """
 import torch
+
+from torchvision.datasets import ImageFolder
+from torchvision import transforms
+
 import numpy as np
 import os
 import argparse
@@ -38,18 +34,14 @@ from Abml import Abml
 from Bmaml import Bmaml
 from ProtoNet import ProtoNet
 from Platipus import Platipus
-from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
+from EpisodeSampler import EpisodeSampler
 # --------------------------------------------------
 # SETUP INPUT PARSER
 # --------------------------------------------------
 parser = argparse.ArgumentParser(description='Setup variables')
 
-parser.add_argument('--datasource', type=str, default='omniglot-py', help='Dataset: omniglot, ImageNet')
-parser.add_argument('--suffix', type=str, default='png', help='Suffix of images, png for omniglot-py, jpg for ImageNet')
-
-parser.add_argument('--load-images', dest='load_images', action='store_true')
-parser.add_argument('--no-load-images', dest='load_images', action='store_false')
-parser.set_defaults(load_images=True)
+parser.add_argument('--ds-folder', type=str, default='../datasets', help='Parent folder containing the dataset')
+parser.add_argument('--datasource', action='append', help='List of datasets')
 
 parser.add_argument('--ml-algorithm', type=str, default='MAML', help='Few-shot learning methods, including: MAML, vampire or protonet')
 
@@ -72,13 +64,11 @@ parser.set_defaults(strided=True)
 
 parser.add_argument("--dropout-prob", type=float, default=0.2, help="Dropout probability")
 
-parser.add_argument('--max-way', type=int, default=5, help='Maximum number of classes within an episode')
-parser.add_argument('--min-way', type=int, default=5, help='Maximum number of classes within an episode')
+parser.add_argument('--num-ways', type=int, default=5, help='Number of classes within a task')
 
 parser.add_argument('--num-inner-updates', type=int, default=5, help='The number of gradient updates for episode adaptation')
 parser.add_argument('--inner-lr', type=float, default=0.1, help='Learning rate of episode adaptation step')
 
-parser.add_argument('--ds-folder', type=str, default='../datasets', help='Parent folder containing the dataset')
 parser.add_argument('--logdir', type=str, default='/media/n10/Data/', help='Folder to store model and logs')
 
 parser.add_argument('--meta-lr', type=float, default=1e-3, help='Learning rate for meta-update')
@@ -98,7 +88,6 @@ parser.set_defaults(train_flag=True)
 parser.add_argument('--num-models', type=int, default=1, help='Number of base network sampled from the hyper-net')
 
 parser.add_argument('--num-episodes', type=int, default=100, help='Number of episodes used in testing')
-parser.add_argument('--episode-file', type=str, default=None, help='Path to csv file: row = episode, columns = list of classes within the episode')
 
 args = parser.parse_args()
 print()
@@ -107,7 +96,7 @@ config = {}
 for key in args.__dict__:
     config[key] = args.__dict__[key]
 
-config['logdir'] = os.path.join(config['logdir'], 'meta_learning', config['ml_algorithm'].lower(), config['datasource'], config['network_architecture'])
+config['logdir'] = os.path.join(config['logdir'], 'meta_learning', config['ml_algorithm'].lower(), config['network_architecture'])
 if not os.path.exists(path=config['logdir']):
     from pathlib import Path
     Path(config['logdir']).mkdir(parents=True, exist_ok=True)
@@ -117,29 +106,52 @@ config['minibatch_print'] = np.lcm(config['minibatch'], 1000)
 config['device'] = torch.device('cuda:0' if torch.cuda.is_available() \
     else torch.device('cpu'))
 
+transformations = transforms.Compose(
+    transforms=[
+        transforms.Resize(size=(84, 84)),
+        transforms.ToTensor()
+    ]
+)
+
 if __name__ == "__main__":
-    # task/episode generator
-    if config['datasource'] in ['omniglot-py']:
-        EpisodeGeneratorClass = OmniglotLoader
-    elif config['datasource'] in ['miniImageNet', 'miniImageNet_64']:
-        EpisodeGeneratorClass = ImageFolderGenerator
-    else:
-        raise ValueError('Unknown dataset')
+    # training data loader
+    if config['train_flag']:
+        train_dataset = torch.utils.data.ConcatDataset(
+            datasets=[ImageFolder(
+                root=os.path.join(config['ds_folder'], data_source, 'train'),
+                transform=transformations
+            ) for data_source in config['datasource']]
+        )
 
-    if config["train_flag"]:
-        train_subset = "train"
-    else:
-        train_subset = "test"
+        train_dataloader = torch.utils.data.DataLoader(
+            dataset=train_dataset,
+            batch_sampler=EpisodeSampler(
+                sampler=torch.utils.data.RandomSampler(data_source=train_dataset),
+                num_ways=config['num_ways'],
+                drop_last=True,
+                num_samples_per_class=config['k_shot'] + config['v_shot']
+            ),
+            num_workers=2,
+            pin_memory=True
+        )
 
-    eps_generator = EpisodeGeneratorClass(
-        root=os.path.join(config['ds_folder'], config['datasource']),
-        train_subset=train_subset,
-        suffix=config['suffix'],
-        min_num_cls=config['min_way'],
-        max_num_cls=config['max_way'],
-        k_shot=config['k_shot'] + config['v_shot'],
-        expand_dim=False,
-        load_images=config['load_images']
+    # testing/validation data loader
+    test_dataset = torch.utils.data.ConcatDataset(
+        datasets=[ImageFolder(
+            root=os.path.join(config['ds_folder'], data_source, 'val' if config['train_flag'] else 'test'),
+            transform=transformations
+        ) for data_source in config['datasource']]
+    )
+    test_dataloader = torch.utils.data.DataLoader(
+        dataset=test_dataset,
+        batch_sampler=EpisodeSampler(
+            sampler=torch.utils.data.RandomSampler(data_source=test_dataset),
+            num_ways=config['num_ways'],
+            drop_last=True,
+            num_samples_per_class=config['k_shot'] + config['v_shot']
+        ),
+        num_workers=2,
+        pin_memory=True
     )
 
     ml_algorithms = {
@@ -157,20 +169,6 @@ if __name__ == "__main__":
     ml = ml_algorithms[config['ml_algorithm'].capitalize()](config=config)
 
     if config['train_flag']:
-        # load validation set if existing
-        if os.path.exists(path=os.path.join(config["ds_folder"], config["datasource"], "val")):
-            eps_generator_val = EpisodeGeneratorClass(
-                root=os.path.join(config["ds_folder"], config["datasource"]),
-                train_subset="val",
-                suffix=config["suffix"],
-                min_num_cls=config["min_way"],
-                max_num_cls=config["max_way"],
-                k_shot=config["k_shot"] + config["v_shot"],
-                expand_dim=False,
-                load_images=config["load_images"]
-            )
-            ml.train(eps_generator=eps_generator, eps_generator_val=eps_generator_val)
-        else:
-            ml.train(eps_generator=eps_generator)
+        ml.train(train_dataloader=train_dataloader, val_dataloader=test_dataloader)
     else:
-        ml.test(eps_generator=eps_generator)
+        ml.test(num_eps=config['num_episodes'], eps_dataloader=test_dataloader)

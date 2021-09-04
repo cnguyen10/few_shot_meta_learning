@@ -3,8 +3,6 @@ import numpy as np
 import higher
 import typing
 
-from torch.nn.modules import distance
-
 from MLBaseClass import MLBaseClass
 from HyperNetClasses import EnsembleNet
 from Maml import Maml
@@ -13,14 +11,11 @@ class Bmaml(MLBaseClass):
     def __init__(self, config: dict) -> None:
         super().__init__(config=config)
         
-        if self.config["min_way"] != self.config["max_way"]:
-            raise ValueError("Current implementation of BMAML works with a fixed number of ways only.")
-        
         self.hyper_net_class = EnsembleNet
 
-    def load_model(self, resume_epoch: int, **kwargs) -> dict:
+    def load_model(self, resume_epoch: int, eps_dataloader: torch.utils.data.DataLoader, **kwargs) -> dict:
         maml_temp = Maml(config=self.config)
-        return maml_temp.load_model(resume_epoch=resume_epoch, **kwargs)
+        return maml_temp.load_model(resume_epoch=resume_epoch, eps_dataloader=eps_dataloader, **kwargs)
 
     def adaptation(self, x: torch.Tensor, y: torch.Tensor, model: dict) -> typing.List[higher.patch._MonkeyPatchBase]:
         """"""

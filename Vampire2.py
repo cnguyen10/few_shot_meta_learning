@@ -10,14 +10,11 @@ class Vampire2(MLBaseClass):
     def __init__(self, config: dict) -> None:
         super().__init__(config=config)
 
-        if self.config['min_way'] != self.config['max_way']:
-            raise ValueError('VAMPIRE works with a fixed number of ways only.')
-
         self.hyper_net_class = NormalVariationalNet
 
-    def load_model(self, resume_epoch: int = None, **kwargs) -> dict:
+    def load_model(self, resume_epoch: int, eps_dataloader: torch.utils.data.DataLoader, **kwargs) -> dict:
         maml_temp = Maml(config=self.config)
-        return maml_temp.load_model(resume_epoch=resume_epoch, **kwargs)
+        return maml_temp.load_model(resume_epoch=resume_epoch, eps_dataloader=eps_dataloader, **kwargs)
 
     def adaptation(self, x: torch.Tensor, y: torch.Tensor, model: dict) -> higher.patch._MonkeyPatchBase:
         # convert hyper_net to its functional form

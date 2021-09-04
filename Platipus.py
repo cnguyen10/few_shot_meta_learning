@@ -13,7 +13,6 @@ import typing
 
 from HyperNetClasses import PlatipusNet
 from Maml import Maml
-from EpisodeGenerator import OmniglotLoader, ImageFolderGenerator
 from _utils import kl_divergence_gaussians, train_val_split, get_episodes
 
 class Platipus(object):
@@ -22,9 +21,9 @@ class Platipus(object):
 
         self.hyper_net_class = PlatipusNet
 
-    def load_model(self, resume_epoch: int, **kwargs) -> dict:
+    def load_model(self, resume_epoch: int, eps_dataloader: torch.utils.data.DataLoader, **kwargs) -> dict:
         maml_temp = Maml(config=self.config)
-        return maml_temp.load_model(resume_epoch=resume_epoch, **kwargs)
+        return maml_temp.load_model(resume_epoch=resume_epoch, eps_dataloader=eps_dataloader, **kwargs)
     
     def adapt_params(self, x: torch.Tensor, y: torch.Tensor, params: typing.List[torch.Tensor], lr: torch.Tensor, model: dict) -> typing.List[torch.Tensor]:
         q_params = [p + 0. for p in params]
@@ -141,21 +140,14 @@ class Platipus(object):
 
         return loss.item(), accuracy * 100
 
-    def train(self, eps_generator: typing.Union[OmniglotLoader, ImageFolderGenerator], **kwargs) -> None:
+    def train(self, train_dataloader: torch.utils.data.DataLoader, val_dataloader: torch.utils.data.DataLoader, **kwargs) -> None:
         """Train meta-learning model
-
-        Args:
-            eps_generator: the generator that generate episodes/tasks
         """
         print("Training is started.\nLog is stored at {0:s}.\n".format(self.config["logdir"]))
 
         # initialize/load model. Please see the load_model method implemented in each specific class for further information about the model
-        model = self.load_model(resume_epoch=self.config["resume_epoch"], hyper_net_class=self.hyper_net_class, eps_generator=eps_generator)
+        model = self.load_model(resume_epoch=self.config["resume_epoch"], hyper_net_class=self.hyper_net_class, eps_dataloader=train_dataloader)
         model["optimizer"].zero_grad()
-
-        # get list of episode names, each episode name consists of classes
-        # if no episode_file is specified, it will consist of None - corresponding to random task
-        eps = get_episodes(episode_file_path=self.config["episode_file"])
 
         # initialize a tensorboard summary writer for logging
         tb_writer = SummaryWriter(
@@ -166,25 +158,18 @@ class Platipus(object):
         try:
             for epoch_id in range(self.config["resume_epoch"], self.config["resume_epoch"] + self.config["num_epochs"], 1):
                 loss_monitor = 0.
-                for eps_count in range(self.config["num_episodes_per_epoch"]):
-                    # -------------------------
-                    # get eps from the given csv file or just random (None)
-                    # -------------------------
-                    eps_name = random.sample(population=eps, k=1)[0]
-
-                    # -------------------------
-                    # episode data
-                    # -------------------------
-                    eps_data = eps_generator.generate_episode(episode_name=eps_name)
+                for eps_count, eps_data in enumerate(train_dataloader):
+                    if (eps_count >= self.config['num_episodes_per_epoch']):
+                        break
 
                     # split data into train and validation
-                    xt, yt, xv, yv = train_val_split(X=eps_data, k_shot=self.config["k_shot"], shuffle=True)
+                    split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
 
                     # move data to GPU (if there is a GPU)
-                    x_t = torch.from_numpy(xt).float().to(self.config["device"])
-                    y_t = torch.tensor(yt, dtype=torch.long, device=self.config["device"])
-                    x_v = torch.from_numpy(xv).float().to(self.config["device"])
-                    y_v = torch.tensor(yv, dtype=torch.long, device=self.config["device"])
+                    x_t = split_data['x_t'].to(self.config['device'])
+                    y_t = split_data['y_t'].to(self.config['device'])
+                    x_v = split_data['x_v'].to(self.config['device'])
+                    y_v = split_data['y_v'].to(self.config['device'])
 
                     # -------------------------
                     # loss on validation subset
@@ -221,10 +206,10 @@ class Platipus(object):
                             # -------------------------
                             # Validation
                             # -------------------------
-                            if ("eps_generator_val" in kwargs):
+                            if val_dataloader is not None:
                                 loss_temp, accuracy_temp = self.evaluate(
-                                    eps=[None] * self.config["num_episodes"],
-                                    eps_generator=kwargs["eps_generator_val"],
+                                    num_eps=self.config['num_episodes'],
+                                    eps_dataloader=val_dataloader,
                                     model=model
                                 )
 
@@ -250,7 +235,7 @@ class Platipus(object):
 
         return None
 
-    def evaluate(self, eps: typing.Optional[typing.List[str]], eps_generator: typing.Union[OmniglotLoader, ImageFolderGenerator], model: dict) -> typing.Tuple[typing.List[float], typing.List[float]]:
+    def evaluate(self, num_eps: int, eps_dataloader: torch.utils.data.DataLoader, model: dict) -> typing.Tuple[typing.List[float], typing.List[float]]:
         """Calculate loss and accuracy of tasks contained in the list "eps"
 
         Args:
@@ -260,40 +245,38 @@ class Platipus(object):
 
         Returns: two lists: loss and accuracy
         """
-        loss = [None] * len(eps)
-        accuracy = [None] * len(eps)
+        loss = [None] * num_eps
+        accuracy = [None] * num_eps
 
-        for eps_id, eps_name in enumerate(eps):
-            # -------------------------
-            # episode data
-            # -------------------------
-            eps_data = eps_generator.generate_episode(episode_name=eps_name)
+        for eps_id, eps_data in enumerate(eps_dataloader):
+            if eps_id >= num_eps:
+                break
 
             # split data into train and validation
-            xt, yt, xv, yv = train_val_split(X=eps_data, k_shot=self.config["k_shot"], shuffle=True)
+            split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
 
             # move data to GPU (if there is a GPU)
-            x_t = torch.from_numpy(xt).float().to(self.config["device"])
-            y_t = torch.tensor(yt, dtype=torch.long, device=self.config["device"])
-            x_v = torch.from_numpy(xv).float().to(self.config["device"])
-            y_v = torch.tensor(yv, dtype=torch.long, device=self.config["device"])
+            x_t = split_data['x_t'].to(self.config['device'])
+            y_t = split_data['y_t'].to(self.config['device'])
+            x_v = split_data['x_v'].to(self.config['device'])
+            y_v = split_data['y_v'].to(self.config['device'])
 
             loss[eps_id], accuracy[eps_id] = self.evaluation(x_t=x_t, y_t=y_t, x_v=x_v, y_v=y_v, model=model)
 
         return loss, accuracy
             
 
-    def test(self, eps_generator: typing.Union[OmniglotLoader, ImageFolderGenerator]) -> None:
-        """Evaluate the performance
-        """
-        print("Evaluation is started.\n")
+    # def test(self, num_eps: int, eps_dataloader: torch.utils.data.DataLoader) -> None:
+    #     """Evaluate the performance
+    #     """
+    #     print("Evaluation is started.\n")
 
-        model = self.load_model(resume_epoch=self.config["resume_epoch"], hyper_net_class=self.hyper_net_class, eps_generator=eps_generator)
+    #     model = self.load_model(resume_epoch=self.config["resume_epoch"], hyper_net_class=self.hyper_net_class, eps_generator=eps_generator)
 
-        # get list of episode names, each episode name consists of classes
-        eps = get_episodes(episode_file_path=self.config["episode_file"])
+    #     # get list of episode names, each episode name consists of classes
+    #     eps = get_episodes(episode_file_path=self.config["episode_file"])
 
-        _, accuracy = self.evaluate(eps=eps, eps_generator=eps_generator, model=model)
+    #     _, accuracy = self.evaluate(eps=eps, eps_generator=eps_generator, model=model)
 
-        print("Accuracy = {0:.2f} +/- {1:.2f}\n".format(np.mean(accuracy), 1.96 * np.std(accuracy) / np.sqrt(len(accuracy))))
-        return None
+    #     print("Accuracy = {0:.2f} +/- {1:.2f}\n".format(np.mean(accuracy), 1.96 * np.std(accuracy) / np.sqrt(len(accuracy))))
+    #     return None

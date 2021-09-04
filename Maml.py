@@ -3,8 +3,6 @@ import higher
 import typing
 import os
 
-from torch.nn.modules import dropout
-
 from MLBaseClass import MLBaseClass
 from HyperNetClasses import IdentityNet
 from CommonModels import CNN, ResNet18
@@ -14,17 +12,15 @@ class Maml(MLBaseClass):
     def __init__(self, config: dict) -> None:
         super().__init__(config=config)
 
-        if self.config['min_way'] != self.config['max_way']:
-            raise ValueError('MAML works with a fixed number of ways only.')
-
         self.hyper_net_class = IdentityNet
 
-    def load_model(self, resume_epoch: int = None, **kwargs) -> dict:
+    def load_model(self, resume_epoch: int, eps_dataloader: torch.utils.data.DataLoader, **kwargs) -> dict:
         """Initialize or load the hyper-net and base-net models
 
         Args:
             hyper_net_class: point to the hyper-net class of interest: IdentityNet for MAML or NormalVariationalNet for VAMPIRE
             resume_epoch: the index of the file containing the saved model
+            eps_dataloader:
 
         Returns: a dictionray consisting of the following key-value pair:
             hypet_net: the hyper neural network
@@ -39,13 +35,13 @@ class Maml(MLBaseClass):
 
         if self.config['network_architecture'] == 'CNN':
             base_net = CNN(
-                dim_output=self.config['min_way'],
+                dim_output=self.config['num_ways'],
                 bn_affine=self.config['batchnorm'],
                 stride_flag=self.config['strided']
             )
         elif self.config['network_architecture'] == 'ResNet18':
             base_net = ResNet18(
-                dim_output=self.config['min_way'],
+                dim_output=self.config['num_ways'],
                 bn_affine=self.config['batchnorm'],
                 dropout_prob=self.config["dropout_prob"]
             )
@@ -55,13 +51,12 @@ class Maml(MLBaseClass):
         # ---------------------------------------------------------------
         # run a dummy task to initialize lazy modules defined in base_net
         # ---------------------------------------------------------------
-        eps_data = kwargs['eps_generator'].generate_episode(episode_name=None)
-        # split data into train and validation
-        xt, _, _, _ = train_val_split(X=eps_data, k_shot=self.config['k_shot'], shuffle=True)
-        # convert numpy data into torch tensor
-        x_t = torch.from_numpy(xt).float()
-        # run to initialize lazy modules
-        base_net(x_t)
+        for eps_data in eps_dataloader:
+            # split data into train and validation
+            split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+            # run to initialize lazy modules
+            base_net.forward(split_data['x_t'])
+            break
 
         params = torch.nn.utils.parameters_to_vector(parameters=base_net.parameters())
         print('Number of parameters of the base network = {0:,}.\n'.format(params.numel()))

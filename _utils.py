@@ -35,39 +35,64 @@ def list_files(root: str, suffix: str, prefix: bool = False) -> typing.List[str]
         files = [os.path.join(root, d) for d in files]
     return files
 
-def train_val_split(X: typing.List[typing.List[np.ndarray]], k_shot: int, shuffle: bool = True) -> typing.Tuple[np.ndarray, typing.List[int], np.ndarray, typing.List[int]]:
+def train_val_split(eps_data: typing.List[torch.Tensor], k_shot: int) -> typing.Dict[str, torch.Tensor]:
     """Split data into train and validation
 
     Args:
-        X: a list of sub-list of numpy array. 
-            Each sub-list consists of data belonging to the same class
+        eps_data: a list of 2 tensors:
+            + first tensor: data
+            + second tensor: labels
         k_shot: number of training data per class
         shuffle: shuffle data before splitting
 
-    Returns:
+    Returns: a dictionary containing data splitted
     """
     # get information of image size
-    nc, iH, iW = X[0][0].shape
+    nc, iH, iW = eps_data[0][0].shape
 
-    v_shot = len(X[0]) - k_shot
-    num_classes = len(X)
+    # get labels
+    labels, num_classes = normalize_labels(labels=eps_data[1])
 
-    x_t = np.empty(shape=(num_classes, k_shot, nc, iH, iW))
-    x_v = np.empty(shape=(num_classes, v_shot, nc, iH, iW))
-    y_t = [0] * num_classes * k_shot
-    y_v = [0] * num_classes * v_shot
+    v_shot = int(labels.numel() / num_classes) - k_shot
+
+    data = {
+        'x_t': torch.empty(size=(num_classes, k_shot, nc, iH, iW), device=eps_data[0].device),
+        'x_v': torch.empty(size=(num_classes, v_shot, nc, iH, iW), device=eps_data[0].device),
+        'y_t': torch.empty(size=(num_classes * k_shot,), dtype=torch.int64, device=eps_data[1].device),
+        'y_v': torch.empty(size=(num_classes * v_shot,), dtype=torch.int64, device=eps_data[1].device)
+    }
     for cls_id in range(num_classes):
-        if shuffle:
-            random.shuffle(x=X[cls_id]) # in-place shuffle data within the same class
-        x_t[cls_id, :, :, :, :] = np.array(X[cls_id][:k_shot])
-        x_v[cls_id, :, :, :, :] = np.array(X[cls_id][k_shot:])
-        y_t[k_shot * cls_id: k_shot * (cls_id + 1)] = [cls_id] * k_shot
-        y_v[v_shot * cls_id: v_shot * (cls_id + 1)] = [cls_id] * v_shot
+        X = eps_data[0][labels == cls_id]
+        data['x_t'][cls_id, :, :, :, :] = X[:k_shot]
+        data['x_v'][cls_id, :, :, :, :] = X[k_shot:]
 
-    x_t = np.concatenate(x_t, axis=0)
-    x_v = np.concatenate(x_v, axis=0)
+        data['y_t'][k_shot * cls_id: k_shot * (cls_id + 1)] = torch.tensor(data=[cls_id] * k_shot, dtype=torch.int64, device=labels.device)
+        data['y_v'][v_shot * cls_id: v_shot * (cls_id + 1)] = torch.tensor(data=[cls_id] * v_shot, dtype=torch.int64, device=labels.device)
 
-    return x_t, y_t, x_v, y_v
+    data['x_t'] = data['x_t'].view(num_classes * k_shot, nc, iH, iW)
+    data['x_v'] = data['x_v'].view(num_classes * v_shot, nc, iH, iW)
+
+    return data
+
+def normalize_labels(labels: torch.Tensor) -> typing.Tuple[torch.Tensor, int]:
+    """Normalize a list of labels, for example:
+    [11, 11, 20, 20, 60, 60, 6, 6] => [0, 0, 1, 1, 2, 2, 3, 3]
+    """
+    if labels.ndim > 1:
+        raise ValueError("Input must be a 1d tensor, not {}".format(labels.ndim))
+
+    out = torch.empty_like(input=labels, device=labels.device)
+    
+    label_dict = {}
+    for i in range(labels.numel()):
+        val = labels[i].item()
+        
+        if val not in label_dict:
+            label_dict[val] = torch.tensor(data=len(label_dict), device=labels.device)
+        
+        out[i] = label_dict[val]
+    
+    return out, len(label_dict)
 
 def get_episodes(episode_file_path: typing.Optional[str] = None, num_episodes: int = 100) -> typing.List[str]:
     """Get episodes from a file
