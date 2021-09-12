@@ -5,7 +5,7 @@ import os
 
 from MLBaseClass import MLBaseClass
 from HyperNetClasses import IdentityNet
-from CommonModels import CNN, ResNet18
+from CommonModels import CNN, ResNet18, FcNet
 from _utils import train_val_split
 
 class Maml(MLBaseClass):
@@ -33,7 +33,12 @@ class Maml(MLBaseClass):
         if resume_epoch is None:
             resume_epoch = self.config['resume_epoch']
 
-        if self.config['network_architecture'] == 'CNN':
+        if self.config['network_architecture'] == 'FcNet':
+            base_net = FcNet(
+                dim_output=self.config['num_ways'],
+                num_hidden_units=(40, 40)
+            )
+        elif self.config['network_architecture'] == 'CNN':
             base_net = CNN(
                 dim_output=self.config['num_ways'],
                 bn_affine=self.config['batchnorm'],
@@ -53,7 +58,7 @@ class Maml(MLBaseClass):
         # ---------------------------------------------------------------
         for eps_data in eps_dataloader:
             # split data into train and validation
-            split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+            split_data = self.config['train_val_split_function'](eps_data=eps_data, k_shot=self.config['k_shot'])
             # run to initialize lazy modules
             base_net.forward(split_data['x_t'])
             break
@@ -121,7 +126,7 @@ class Maml(MLBaseClass):
             logits = model["f_base_net"].forward(x, params=base_net_params)
 
             # calculate classification loss
-            loss = torch.nn.functional.cross_entropy(input=logits, target=y)
+            loss = self.config['loss_function'](input=logits, target=y)
 
             if self.config['first_order']:
                 grads = torch.autograd.grad(
@@ -157,7 +162,7 @@ class Maml(MLBaseClass):
         """See MLBaseClass for the description"""
         logits = self.prediction(x=x, adapted_hyper_net=adapted_hyper_net, model=model)
 
-        loss = torch.nn.functional.cross_entropy(input=logits, target=y)
+        loss = self.config['loss_function'](input=logits, target=y)
 
         return loss
 
@@ -167,7 +172,7 @@ class Maml(MLBaseClass):
         
         logits = self.prediction(x=x_v, adapted_hyper_net=adapted_hyper_net, model=model)
 
-        loss = torch.nn.functional.cross_entropy(input=logits, target=y_v)
+        loss = self.config['loss_function'](input=logits, target=y_v)
 
         accuracy = (logits.argmax(dim=1) == y_v).float().mean().item()
 

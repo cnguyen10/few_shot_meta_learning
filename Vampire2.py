@@ -38,7 +38,7 @@ class Vampire2(MLBaseClass):
 
                 y_logits = model["f_base_net"].forward(x, params=base_net_params)
 
-                cls_loss = torch.nn.functional.cross_entropy(input=y_logits, target=y)
+                cls_loss = self.config['loss_function'](input=y_logits, target=y)
 
                 loss = cls_loss + self.config['KL_weight'] * KL_loss
 
@@ -88,7 +88,7 @@ class Vampire2(MLBaseClass):
 
         # classification loss
         for logits_ in logits:
-            loss = loss + torch.nn.functional.cross_entropy(input=logits_, target=y)
+            loss = loss + self.config['loss_function'](input=logits_, target=y)
         
         loss = loss / len(logits)
 

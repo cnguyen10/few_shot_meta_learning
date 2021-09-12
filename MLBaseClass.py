@@ -11,8 +11,6 @@ import sys
 
 import abc
 
-from _utils import train_val_split, get_episodes
-
 # --------------------------------------------------
 # Default configuration
 # --------------------------------------------------
@@ -162,7 +160,7 @@ class MLBaseClass(object):
                         break
 
                     # split data into train and validation
-                    split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+                    split_data = self.config['train_val_split_function'](eps_data=eps_data, k_shot=self.config['k_shot'])
 
                     # move data to GPU (if there is a GPU)
                     x_t = split_data['x_t'].to(self.config['device'])
@@ -261,7 +259,7 @@ class MLBaseClass(object):
                 break
 
             # split data into train and validation
-            split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+            split_data = self.config['train_val_split_function'](eps_data=eps_data, k_shot=self.config['k_shot'])
 
             # move data to GPU (if there is a GPU)
             x_t = split_data['x_t'].to(self.config['device'])
@@ -281,7 +279,8 @@ class MLBaseClass(object):
 
         model = self.load_model(resume_epoch=self.config["resume_epoch"], hyper_net_class=self.hyper_net_class, eps_dataloader=eps_dataloader)
 
-        _, accuracy = self.evaluate(num_eps=num_eps, eps_dataloader=eps_dataloader, model=model)
+        loss, accuracy = self.evaluate(num_eps=num_eps, eps_dataloader=eps_dataloader, model=model)
 
+        print('NLL = {0} +/- {1}'.format(np.mean(loss), 1.96 * np.std(loss) / np.sqrt(len(loss))))
         print("Accuracy = {0:.2f} +/- {1:.2f}\n".format(np.mean(accuracy), 1.96 * np.std(accuracy) / np.sqrt(len(accuracy))))
         return None

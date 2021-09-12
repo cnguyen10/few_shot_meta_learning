@@ -1,8 +1,12 @@
 """
 # MAML
+python3 main.py --datasource SineLine --ml-algorithm MAML --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
+
 python3 main.py --datasource=miniImageNet --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --num-epochs=1 --resume-epoch=1 --train
 
 # VAMPIRE2
+python3 main.py --datasource SineLine --ml-algorithm vampire2 --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
+
 python3 main.py --datasource=miniImageNet --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # ABML
@@ -26,7 +30,12 @@ import numpy as np
 import os
 import argparse
 
-# from MetaLearning import MetaLearning
+# import regression data generator
+from RegressionDataset import SineDataset, LineDataset
+
+from _utils import train_val_split, train_val_split_regression
+
+# import meta-learning algorithm
 from Maml import Maml
 from Vampire2 import Vampire2
 from Abml import Abml
@@ -40,7 +49,7 @@ from EpisodeSampler import EpisodeSampler
 parser = argparse.ArgumentParser(description='Setup variables')
 
 parser.add_argument('--ds-folder', type=str, default='../datasets', help='Parent folder containing the dataset')
-parser.add_argument('--datasource', action='append', help='List of datasets')
+parser.add_argument('--datasource', action='append', help='List of datasets: SineLine for regression, and omniglot, miniImageNet, ImageNet for classification')
 
 parser.add_argument('--ml-algorithm', type=str, default='MAML', help='Few-shot learning methods, including: MAML, vampire or protonet')
 
@@ -113,19 +122,41 @@ transformations = transforms.Compose(
 )
 
 if __name__ == "__main__":
-    # training data loader
-    if config['train_flag']:
-        train_dataset = torch.utils.data.ConcatDataset(
+    if 'SineLine' not in config['datasource']:
+        # classification
+        if config['train_flag']:
+            # training dataset
+            train_dataset = torch.utils.data.ConcatDataset(
+                datasets=[ImageFolder(
+                    root=os.path.join(config['ds_folder'], data_source, 'train'),
+                    transform=transformations
+                ) for data_source in config['datasource']]
+            )
+
+            # training data loader
+            train_dataloader = torch.utils.data.DataLoader(
+                dataset=train_dataset,
+                batch_sampler=EpisodeSampler(
+                    sampler=torch.utils.data.RandomSampler(data_source=train_dataset),
+                    num_ways=config['num_ways'],
+                    drop_last=True,
+                    num_samples_per_class=config['k_shot'] + config['v_shot']
+                ),
+                num_workers=2,
+                pin_memory=True
+            )
+
+        # testing/validation data loader
+        test_dataset = torch.utils.data.ConcatDataset(
             datasets=[ImageFolder(
-                root=os.path.join(config['ds_folder'], data_source, 'train'),
+                root=os.path.join(config['ds_folder'], data_source, 'val' if config['train_flag'] else 'test'),
                 transform=transformations
             ) for data_source in config['datasource']]
         )
-
-        train_dataloader = torch.utils.data.DataLoader(
-            dataset=train_dataset,
+        test_dataloader = torch.utils.data.DataLoader(
+            dataset=test_dataset,
             batch_sampler=EpisodeSampler(
-                sampler=torch.utils.data.RandomSampler(data_source=train_dataset),
+                sampler=torch.utils.data.RandomSampler(data_source=test_dataset),
                 num_ways=config['num_ways'],
                 drop_last=True,
                 num_samples_per_class=config['k_shot'] + config['v_shot']
@@ -134,24 +165,21 @@ if __name__ == "__main__":
             pin_memory=True
         )
 
-    # testing/validation data loader
-    test_dataset = torch.utils.data.ConcatDataset(
-        datasets=[ImageFolder(
-            root=os.path.join(config['ds_folder'], data_source, 'val' if config['train_flag'] else 'test'),
-            transform=transformations
-        ) for data_source in config['datasource']]
-    )
-    test_dataloader = torch.utils.data.DataLoader(
-        dataset=test_dataset,
-        batch_sampler=EpisodeSampler(
-            sampler=torch.utils.data.RandomSampler(data_source=test_dataset),
-            num_ways=config['num_ways'],
-            drop_last=True,
-            num_samples_per_class=config['k_shot'] + config['v_shot']
-        ),
-        num_workers=2,
-        pin_memory=True
-    )
+        config['loss_function'] = torch.nn.CrossEntropyLoss()
+        config['train_val_split_function'] = train_val_split
+    else: # regression
+        regression_dataset = torch.utils.data.ConcatDataset(
+            datasets=[
+                SineDataset(amplitude_range=[0.1, 5], phase_range=[0, np.pi], noise_std=0.3, x_range=[-5, 5], num_samples=50),
+                LineDataset(slope_range=[-5, 5], intercept_range=[-5, 5], x_range=[-5, 5], num_samples=50, noise_std=0.3)
+            ]
+        )
+        
+        train_dataloader = torch.utils.data.DataLoader(dataset=regression_dataset)
+        test_dataloader = torch.utils.data.DataLoader(dataset=regression_dataset)
+
+        config['loss_function'] = torch.nn.MSELoss()
+        config['train_val_split_function'] = train_val_split_regression
 
     ml_algorithms = {
         'Maml': Maml,
