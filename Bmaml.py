@@ -35,7 +35,7 @@ class Bmaml(MLBaseClass):
                 
                 logits = model["f_base_net"].forward(x, params=base_net_params)
 
-                loss_temp = torch.nn.functional.cross_entropy(input=logits, target=y)
+                loss_temp = self.config['loss_function'](input=logits, target=y)
 
                 if self.config["first_order"]:
                     grads = torch.autograd.grad(
@@ -79,7 +79,7 @@ class Bmaml(MLBaseClass):
         loss = 0
 
         for logits_ in logits:
-            loss_temp = torch.nn.functional.cross_entropy(input=logits_, target=y)
+            loss_temp = self.config['loss_function'](input=logits_, target=y)
             loss = loss + loss_temp
         
         loss = loss / len(logits)
@@ -96,7 +96,7 @@ class Bmaml(MLBaseClass):
         # classification loss
         loss = 0
         for logits_ in logits:
-            loss = loss + torch.nn.functional.cross_entropy(input=logits_, target=y_v)
+            loss = loss + self.config['loss_function'](input=logits_, target=y_v)
         
         loss = loss / len(logits)
 

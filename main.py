@@ -10,12 +10,18 @@ python3 main.py --datasource SineLine --ml-algorithm vampire2 --num-models 4 --f
 python3 main.py --datasource=miniImageNet --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # ABML
+python3 main.py --datasource SineLine --ml-algorithm abml --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
+
 python3 main.py --datasource=miniImageNet --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # PLATIPUS
+python3 main.py --datasource SineLine --ml-algorithm platipus --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
+
 python3 main.py --datasource=miniImageNet --ml-algorithm=platipus --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
 
 # BMAML
+python3 main.py --datasource SineLine --ml-algorithm bmaml --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
+
 python3 main.py --datasource=miniImageNet --ml-algorithm=bmaml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --no-strided --num-ways=5 --num-epochs=100 --resume-epoch=0 --train
 
 # PROTONET

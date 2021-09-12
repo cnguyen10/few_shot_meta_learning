@@ -13,7 +13,7 @@ import typing
 
 from HyperNetClasses import PlatipusNet
 from Maml import Maml
-from _utils import kl_divergence_gaussians, train_val_split, get_episodes
+from _utils import kl_divergence_gaussians
 
 class Platipus(object):
     def __init__(self, config: dict) -> None:
@@ -33,7 +33,7 @@ class Platipus(object):
             logits = model["f_base_net"].forward(x, params=q_params)
 
             # calculate classification loss
-            loss = torch.nn.functional.cross_entropy(input=logits, target=y)
+            loss = self.config['loss_function'](input=logits, target=y)
 
             if self.config["first_order"]:
                 grads = torch.autograd.grad(
@@ -106,7 +106,7 @@ class Platipus(object):
         loss = 0
         for i in range(len(phi)):
             logits = model["f_base_net"].forward(x_v, params=phi[i])
-            loss_temp = torch.nn.functional.cross_entropy(input=logits, target=y_v)
+            loss_temp = self.config['loss_function'](input=logits, target=y_v)
             loss = loss + loss_temp
         
         loss = loss / len(phi)
@@ -126,7 +126,7 @@ class Platipus(object):
         # classification loss
         loss = 0
         for logits_ in logits:
-            loss = loss + torch.nn.functional.cross_entropy(input=logits_, target=y_v)
+            loss = loss + self.config['loss_function'](input=logits_, target=y_v)
         
         loss = loss / len(logits)
 
@@ -163,7 +163,7 @@ class Platipus(object):
                         break
 
                     # split data into train and validation
-                    split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+                    split_data = self.config['train_val_split_function'](eps_data=eps_data, k_shot=self.config['k_shot'])
 
                     # move data to GPU (if there is a GPU)
                     x_t = split_data['x_t'].to(self.config['device'])
@@ -253,7 +253,7 @@ class Platipus(object):
                 break
 
             # split data into train and validation
-            split_data = train_val_split(eps_data=eps_data, k_shot=self.config['k_shot'])
+            split_data = self.config['train_val_split_function'](eps_data=eps_data, k_shot=self.config['k_shot'])
 
             # move data to GPU (if there is a GPU)
             x_t = split_data['x_t'].to(self.config['device'])
