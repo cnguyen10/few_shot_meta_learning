@@ -156,7 +156,7 @@ class MLBaseClass(object):
                 loss_monitor = 0.
                 for eps_count, eps_data in enumerate(train_dataloader):
 
-                    if (eps_count >= config['num_episodes_per_epoch']):
+                    if (eps_count >= self.config['num_episodes_per_epoch']):
                         break
 
                     # split data into train and validation
@@ -213,7 +213,7 @@ class MLBaseClass(object):
                                 model["f_base_net"].eval()
 
                                 loss_temp, accuracy_temp = self.evaluate(
-                                    num_eps=config['num_episodes'],
+                                    num_eps=self.config['num_episodes'],
                                     eps_dataloader=val_dataloader,
                                     model=model
                                 )
