@@ -81,7 +81,7 @@ parser.add_argument("--dropout-prob", type=float, default=0.2, help="Dropout pro
 parser.add_argument('--num-ways', type=int, default=5, help='Number of classes within a task')
 
 parser.add_argument('--num-inner-updates', type=int, default=5, help='The number of gradient updates for episode adaptation')
-parser.add_argument('--inner-lr', type=float, default=0.1, help='Learning rate of episode adaptation step')
+parser.add_argument('--inner-lr', type=float, default=0.01, help='Learning rate of episode adaptation step')
 
 parser.add_argument('--logdir', type=str, default='/media/n10/Data/', help='Folder to store model and logs')
 
@@ -98,6 +98,8 @@ parser.add_argument('--resume-epoch', type=int, default=0, help='Resume')
 parser.add_argument('--train', dest='train_flag', action='store_true')
 parser.add_argument('--test', dest='train_flag', action='store_false')
 parser.set_defaults(train_flag=True)
+
+parser.add_argument('--num-workers', type=int, default=2, help='Number of workers used in data loader')
 
 parser.add_argument('--num-models', type=int, default=1, help='Number of base network sampled from the hyper-net')
 
@@ -148,7 +150,7 @@ if __name__ == "__main__":
                     drop_last=True,
                     num_samples_per_class=config['k_shot'] + config['v_shot']
                 ),
-                num_workers=2,
+                num_workers=config['num_workers'],
                 pin_memory=True
             )
 
@@ -177,12 +179,12 @@ if __name__ == "__main__":
         regression_dataset = torch.utils.data.ConcatDataset(
             datasets=[
                 SineDataset(amplitude_range=[0.1, 5], phase_range=[0, np.pi], noise_std=0.3, x_range=[-5, 5], num_samples=50),
-                LineDataset(slope_range=[-5, 5], intercept_range=[-5, 5], x_range=[-5, 5], num_samples=50, noise_std=0.3)
+                LineDataset(slope_range=[-3, 3], intercept_range=[-3, 3], x_range=[-5, 5], num_samples=50, noise_std=0.3)
             ]
         )
         
-        train_dataloader = torch.utils.data.DataLoader(dataset=regression_dataset)
-        test_dataloader = torch.utils.data.DataLoader(dataset=regression_dataset)
+        train_dataloader = torch.utils.data.DataLoader(dataset=regression_dataset, shuffle=True)
+        test_dataloader = torch.utils.data.DataLoader(dataset=regression_dataset, shuffle=True)
 
         config['loss_function'] = torch.nn.MSELoss()
         config['train_val_split_function'] = train_val_split_regression
