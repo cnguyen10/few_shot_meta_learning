@@ -29,7 +29,7 @@ class SineDataset(torch.utils.data.Dataset):
         self.x = torch.linspace(start=x_range[0], end=x_range[1], steps=num_samples)
 
     def __len__(self) -> int:
-        return 1
+        return 100000
 
     def __getitem__(self, index) -> typing.List[torch.Tensor]:
         """generate data of a task
