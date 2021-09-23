@@ -1,8 +1,8 @@
 import torch
+import higher
 import random
 import os
 import csv
-import itertools
 import typing
 import numpy as np
 
@@ -254,3 +254,12 @@ def intialize_parameters(state_dict: dict) -> typing.List[torch.Tensor]:
             torch.nn.init.zeros_(tensor=m)
     
     return p
+
+def torch_module_to_functional(torch_net: torch.nn.Module) -> higher.patch._MonkeyPatchBase:
+    """Convert a conventional torch module to its "functional" form
+    """
+    f_net = higher.patch.make_functional(module=torch_net)
+    f_net.track_higher_grads = False
+    f_net._fast_params = [[]]
+
+    return f_net

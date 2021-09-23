@@ -6,7 +6,6 @@ import os
 from MLBaseClass import MLBaseClass
 from HyperNetClasses import IdentityNet
 from CommonModels import CNN, ResNet18, FcNet
-from _utils import train_val_split
 
 class Maml(MLBaseClass):
     def __init__(self, config: dict) -> None:
