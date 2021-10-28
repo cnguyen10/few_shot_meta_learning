@@ -106,7 +106,9 @@ Note that ABML is slightly different since it also includes the loss made by the
 
 ## Data source
 ### Regression
-Currently, regression has not been implemented yet.
+The `DataLoader` in PyTorch is modified to generate data for multimodality tasks where each regression is generated from either a sinusoidal or linear function. To run with regression, please specify `--datasource SineLine` as one of the input arguments.
+
+A Jupyter Notebook (`visualize_regression.ipynb`) to visualize regression results saved in the `meta_learning` folder is also added.
 
 ### Classification
 Omniglot and mini-ImageNet are the two datasets considered. They are organized following the `torchvision.datasets.ImageFolder`.
