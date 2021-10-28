@@ -5,7 +5,7 @@ import os
 
 from MLBaseClass import MLBaseClass
 from HyperNetClasses import IdentityNet
-from CommonModels import CNN, ResNet18, FcNet
+from CommonModels import CNN, ResNet18, FcNet, ResNet10
 
 class Maml(MLBaseClass):
     def __init__(self, config: dict) -> None:
@@ -42,6 +42,12 @@ class Maml(MLBaseClass):
                 dim_output=self.config['num_ways'],
                 bn_affine=self.config['batchnorm'],
                 stride_flag=self.config['strided']
+            )
+        elif self.config['network_architecture'] == 'ResNet10':
+            base_net = ResNet10(
+                dim_output=self.config['num_ways'],
+                bn_affine=self.config['batchnorm'],
+                dropout_prob=self.config['dropout_prob']
             )
         elif self.config['network_architecture'] == 'ResNet18':
             base_net = ResNet18(

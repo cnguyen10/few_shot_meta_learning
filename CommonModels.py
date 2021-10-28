@@ -1,5 +1,6 @@
 import torch
 from torchvision.models import resnet18
+import torchvision
 import typing
 
 class FcNet(torch.nn.Module):
@@ -142,6 +143,85 @@ class CNN(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward"""
         return self.cnn(x)
+
+class ResNet10(torch.nn.Module):
+    def __init__(self, dim_output: typing.Optional[int] = None, bn_affine: bool = False, **kwargs) -> None:
+        """Initialize an instance of Resnet-10
+
+        Args:
+            dim_output: the number of classes at the output. If None, the last fully-connected layer will be excluded.
+        """
+        super().__init__()
+
+        self.dim_output = dim_output
+        self.bn_affine = bn_affine
+        self.dropout_prob = kwargs["dropout_prob"]
+
+        self.net = self.modified_resnet10()
+
+    def modified_resnet10(self) -> torch.nn.Module:
+        """Create an instance of Resnet-10 with the batch-norm layer modified
+        """
+        # initialize a Resnet-10 instance
+        net = torchvision.models.resnet._resnet(arch="resnet10", block=torchvision.models.resnet.BasicBlock, layers=[1, 1, 1, 1], pretrained=False, progress=False)
+
+        # the first layer will be a lazy convolutional layer with any input channels
+        net.conv1 = torch.nn.LazyConv2d(
+            out_channels=64,
+            kernel_size=(7, 7),
+            stride=(2, 2),
+            padding=(3, 3),
+            bias=not self.bn_affine
+        )
+
+        # modify batch-norm layer to have momentum 1 and no tracking statistics
+        net.bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
+
+        net.layer1[0].bn1 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer1[0].bn2 = torch.nn.BatchNorm2d(64, momentum=1, track_running_stats=False, affine=self.bn_affine)
+
+        net.layer2[0].bn1 = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer2[0].bn2 = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer2[0].downsample[1] = torch.nn.BatchNorm2d(128, momentum=1, track_running_stats=False, affine=self.bn_affine)
+
+        net.layer3[0].bn1 = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer3[0].bn2 = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer3[0].downsample[1] = torch.nn.BatchNorm2d(256, momentum=1, track_running_stats=False, affine=self.bn_affine)
+
+        net.layer4[0].bn1 = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer4[0].bn2 = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
+        net.layer4[0].downsample[1] = torch.nn.BatchNorm2d(512, momentum=1, track_running_stats=False, affine=self.bn_affine)
+
+        # last layer
+        if self.dim_output is not None:
+            net.fc = torch.nn.LazyLinear(out_features=self.dim_output)
+        else:
+            net.fc = torch.nn.Identity()
+
+        # add dropout-2d after layers 1, 2, and 3
+        net.maxpool.add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+
+        net.layer1[0].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        # net.layer1[1].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer1.add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+
+        net.layer2[0].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        # net.layer2[1].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer2.add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+
+        net.layer3[0].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        # net.layer3[1].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer3.add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+
+        net.layer4[0].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        # net.layer4[1].add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+        net.layer4.add_module(name='dropout2d', module=torch.nn.Dropout2d(p=self.dropout_prob))
+
+        return net
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """"""
+        return self.net(x)
 
 class ResNet18(torch.nn.Module):
     """A modified version of ResNet-18 that suits meta-learning"""
