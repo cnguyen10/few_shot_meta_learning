@@ -2,30 +2,35 @@
 # MAML
 python3 main.py --datasource SineLine --ml-algorithm MAML --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 
-python3 main.py --datasource=miniImageNet --ml-algorithm=MAML --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --num-epochs=1 --resume-epoch=1 --train
+python3 main.py --datasource omniglot --img-size 32 --img-size 32 --ml-algorithm MAML --first-order --network-architecture CNN --no-batchnorm --num-ways 5 --k-shot 1 --v-shot 15 --inner-lr 0.1 --num-inner-updates 5 --meta-lr 1e-3 --num-epochs 20 --resume-epoch 0 --train
+
+python3 main.py --datasource miniImageNet --img-size 84 --img-size 84 --ml-algorithm MAML --first-order --network-architecture ResNet10 --no-batchnorm --num-ways 5 --inner-lr 0.1 --num-inner-updates 5 --meta-lr 1e-3 --num-epochs 1 --resume-epoch 0 --train
 
 # VAMPIRE2
 python3 main.py --datasource SineLine --ml-algorithm vampire2 --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 
-python3 main.py --datasource=miniImageNet --ml-algorithm=vampire2 --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource miniImageNet --ml-algorithm vampire2 --num-models 2 --first-order --network-architecture CNN --no-batchnorm --num-ways 5 --no-strided --num-epochs 100 --resume-epoch 0 --train
 
 # ABML
 python3 main.py --datasource SineLine --ml-algorithm abml --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 
-python3 main.py --datasource=miniImageNet --ml-algorithm=abml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource miniImageNet --ml-algorithm abml --num-models 2 --first-order --network-architecture CNN --no-batchnorm --num-ways 5 --no-strided --num-epochs 100 --resume-epoch 0 --train
 
 # PLATIPUS
 python3 main.py --datasource SineLine --ml-algorithm platipus --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 
-python3 main.py --datasource=miniImageNet --ml-algorithm=platipus --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource miniImageNet --ml-algorithm platipus --num-models 2 --first-order --network-architecture CNN --no-batchnorm --num-ways 5 --no-strided --num-epochs 100 --resume-epoch=0 --train
 
 # BMAML
 python3 main.py --datasource SineLine --ml-algorithm bmaml --num-models 4 --first-order --network-architecture FcNet --no-batchnorm --num-ways 1 --k-shot 5 --inner-lr 0.001 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 
-python3 main.py --datasource=miniImageNet --ml-algorithm=bmaml --num-models=2 --first-order --network-architecture=CNN --no-batchnorm --no-strided --num-ways=5 --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource miniImageNet --ml-algorithm bmaml --num-models 2 --first-order --network-architecture CNN --no-batchnorm --no-strided --num-ways 5 --num-epochs 100 --resume-epoch 0 --train
 
 # PROTONET
-python3 main.py --datasource=miniImageNet --ml-algorithm=protonet --network-architecture=CNN --no-batchnorm --num-ways=5 --no-strided --num-epochs=100 --resume-epoch=0 --train
+python3 main.py --datasource miniImageNet --ml-algorithm protonet --network-architecture CNN --no-batchnorm --num-ways 5 --no-strided --num-epochs 100 --resume-epoch 0 --train
+
+# SIMPA
+python3 main.py --datasource miniImageNet --ml-algorithm simpa --network-architecture CNN --no-batchnorm --no-strided --num-ways 5 --k-shot 1 --num-models 2 --minibatch 5 --inner-lr 0.01 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 """
 import torch
 
@@ -48,6 +53,7 @@ from Abml import Abml
 from Bmaml import Bmaml
 from ProtoNet import ProtoNet
 from Platipus import Platipus
+from Simpa import Simpa
 from EpisodeSampler import EpisodeSampler
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -56,6 +62,8 @@ parser = argparse.ArgumentParser(description='Setup variables')
 
 parser.add_argument('--ds-folder', type=str, default='../datasets', help='Parent folder containing the dataset')
 parser.add_argument('--datasource', action='append', help='List of datasets: SineLine for regression, and omniglot, miniImageNet, ImageNet for classification')
+
+parser.add_argument('--img-size', action='append', help='A pair of image size: 32 or 84')
 
 parser.add_argument('--ml-algorithm', type=str, default='MAML', help='Few-shot learning methods, including: MAML, vampire or protonet')
 
@@ -76,7 +84,7 @@ parser.add_argument('--strided', dest='strided', action='store_true')
 parser.add_argument('--no-strided', dest='strided', action='store_false')
 parser.set_defaults(strided=True)
 
-parser.add_argument("--dropout-prob", type=float, default=0.2, help="Dropout probability")
+parser.add_argument("--dropout-prob", type=float, default=0, help="Dropout probability")
 
 parser.add_argument('--num-ways', type=int, default=5, help='Number of classes within a task')
 
@@ -112,7 +120,7 @@ config = {}
 for key in args.__dict__:
     config[key] = args.__dict__[key]
 
-config['logdir'] = os.path.join(config['logdir'], 'meta_learning', config['ml_algorithm'].lower(), config['network_architecture'])
+config['logdir'] = os.path.join(config['logdir'], 'meta_learning', config['ml_algorithm'].lower(), config['network_architecture'], config['datasource'][0])
 if not os.path.exists(path=config['logdir']):
     from pathlib import Path
     Path(config['logdir']).mkdir(parents=True, exist_ok=True)
@@ -122,15 +130,16 @@ config['minibatch_print'] = np.lcm(config['minibatch'], 1000)
 config['device'] = torch.device('cuda:0' if torch.cuda.is_available() \
     else torch.device('cpu'))
 
-transformations = transforms.Compose(
-    transforms=[
-        transforms.Resize(size=(84, 84)),
-        transforms.ToTensor()
-    ]
-)
 
 if __name__ == "__main__":
     if 'SineLine' not in config['datasource']:
+        # define some transformation
+        transformations = transforms.Compose(
+            transforms=[
+                transforms.Resize(size=([int(i) for i in config['img_size']])),
+                transforms.ToTensor()
+            ]
+        )
         # classification
         if config['train_flag']:
             # training dataset
@@ -195,7 +204,8 @@ if __name__ == "__main__":
         'Abml': Abml,
         "Bmaml": Bmaml,
         'Protonet': ProtoNet,
-        "Platipus": Platipus
+        "Platipus": Platipus,
+        'Simpa': Simpa
     }
     print('ML algorithm = {0:s}'.format(config['ml_algorithm']))
 
