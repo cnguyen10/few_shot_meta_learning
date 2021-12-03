@@ -42,18 +42,18 @@ import os
 import argparse
 
 # import regression data generator
-from RegressionDataset import SineDataset, LineDataset
+from src.fsml.RegressionDataset import SineDataset, LineDataset
 
-from _utils import train_val_split, train_val_split_regression
+from src.fsml._utils import train_val_split, train_val_split_regression
 
 # import meta-learning algorithm
-from Maml import Maml
-from Vampire2 import Vampire2
-from Abml import Abml
-from Bmaml import Bmaml
-from ProtoNet import ProtoNet
-from Platipus import Platipus
-from Simpa import Simpa
+from src.fsml.algorithms.Maml import Maml
+from src.fsml.algorithms.Vampire2 import Vampire2
+from src.fsml.algorithms.Abml import Abml
+from src.fsml.algorithms.Bmaml import Bmaml
+from src.fsml.algorithms.ProtoNet import ProtoNet
+from src.fsml.algorithms.Platipus import Platipus
+#from Simpa import Simpa
 from EpisodeSampler import EpisodeSampler
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         "Bmaml": Bmaml,
         'Protonet': ProtoNet,
         "Platipus": Platipus,
-        'Simpa': Simpa
+        #'Simpa': Simpa
     }
     print('ML algorithm = {0:s}'.format(config['ml_algorithm']))
 
