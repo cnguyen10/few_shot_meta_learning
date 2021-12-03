@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import typing
 
-from _utils import intialize_parameters, vector_to_list_parameters
+from src._utils import intialize_parameters, vector_to_list_parameters
 
 class IdentityNet(torch.nn.Module):
     """Identity hyper-net class for MAML"""

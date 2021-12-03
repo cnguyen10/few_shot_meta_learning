@@ -47,13 +47,13 @@ from RegressionDataset import SineDataset, LineDataset
 from _utils import train_val_split, train_val_split_regression
 
 # import meta-learning algorithm
-from Maml import Maml
-from Vampire2 import Vampire2
-from Abml import Abml
-from Bmaml import Bmaml
-from ProtoNet import ProtoNet
-from Platipus import Platipus
-from Simpa import Simpa
+from src.algorithms.Maml import Maml
+from src.algorithms.Vampire2 import Vampire2
+from src.algorithms.Abml import Abml
+from src.algorithms.Bmaml import Bmaml
+from src.algorithms.ProtoNet import ProtoNet
+from src.algorithms.Platipus import Platipus
+#from Simpa import Simpa
 from EpisodeSampler import EpisodeSampler
 # --------------------------------------------------
 # SETUP INPUT PARSER
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         "Bmaml": Bmaml,
         'Protonet': ProtoNet,
         "Platipus": Platipus,
-        'Simpa': Simpa
+        #'Simpa': Simpa
     }
     print('ML algorithm = {0:s}'.format(config['ml_algorithm']))
 

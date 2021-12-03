@@ -3,9 +3,9 @@ import higher
 import typing
 import os
 
-from MLBaseClass import MLBaseClass
-from HyperNetClasses import IdentityNet
-from CommonModels import CNN, ResNet18, FcNet, ResNet10
+from src.HyperNetClasses import IdentityNet
+from src.CommonModels import CNN, ResNet18, FcNet, ResNet10
+from src.algorithms.MLBaseClass import MLBaseClass
 
 class Maml(MLBaseClass):
     def __init__(self, config: dict) -> None:

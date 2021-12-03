@@ -1,7 +1,7 @@
 import torch
 import higher
 
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import typing
@@ -146,10 +146,10 @@ class MLBaseClass(object):
         model["optimizer"].zero_grad()
 
         # initialize a tensorboard summary writer for logging
-        tb_writer = SummaryWriter(
-            log_dir=self.config['logdir'],
-            purge_step=self.config['resume_epoch'] * self.config['num_episodes_per_epoch'] // self.config['minibatch_print'] if self.config['resume_epoch'] > 0 else None
-        )
+        # tb_writer = SummaryWriter(
+        #     log_dir=self.config['logdir'],
+        #     purge_step=self.config['resume_epoch'] * self.config['num_episodes_per_epoch'] // self.config['minibatch_print'] if self.config['resume_epoch'] > 0 else None
+        # )
 
         try:
             for epoch_id in range(self.config['resume_epoch'], self.config['resume_epoch'] + self.config['num_epochs'], 1):
@@ -200,7 +200,7 @@ class MLBaseClass(object):
                             # calculate step for Tensorboard Summary Writer
                             global_step = (epoch_id * self.config['num_episodes_per_epoch'] + eps_count + 1) // self.config['minibatch_print']
 
-                            tb_writer.add_scalar(tag="Train_Loss", scalar_value=loss_monitor, global_step=global_step)
+                            #tb_writer.add_scalar(tag="Train_Loss", scalar_value=loss_monitor, global_step=global_step)
 
                             # reset monitoring variables
                             loss_monitor = 0.
@@ -218,8 +218,8 @@ class MLBaseClass(object):
                                     model=model
                                 )
 
-                                tb_writer.add_scalar(tag="Val_NLL", scalar_value=np.mean(loss_temp), global_step=global_step)
-                                tb_writer.add_scalar(tag="Val_Accuracy", scalar_value=np.mean(accuracy_temp), global_step=global_step)
+                                # tb_writer.add_scalar(tag="Val_NLL", scalar_value=np.mean(loss_temp), global_step=global_step)
+                                # tb_writer.add_scalar(tag="Val_Accuracy", scalar_value=np.mean(accuracy_temp), global_step=global_step)
 
                                 model["f_base_net"].train()
                                 del loss_temp
@@ -237,7 +237,7 @@ class MLBaseClass(object):
             print('Training is completed.')
         finally:
             print('\nClose tensorboard summary writer')
-            tb_writer.close()
+            # tb_writer.close()
 
         return None
 

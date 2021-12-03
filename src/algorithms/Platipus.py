@@ -3,17 +3,16 @@ Training PLATIPUS is quite time-consuming. One might need to train MAML, then lo
 """
 
 import torch
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import os
 import random
 import typing
 
-
-from HyperNetClasses import PlatipusNet
-from Maml import Maml
-from _utils import kl_divergence_gaussians
+from src._utils import kl_divergence_gaussians
+from src.HyperNetClasses import PlatipusNet
+from src.algorithms.Maml import Maml
 
 class Platipus(object):
     def __init__(self, config: dict) -> None:
@@ -150,10 +149,10 @@ class Platipus(object):
         model["optimizer"].zero_grad()
 
         # initialize a tensorboard summary writer for logging
-        tb_writer = SummaryWriter(
-            log_dir=self.config["logdir"],
-            purge_step=self.config["resume_epoch"] * self.config["num_episodes_per_epoch"] // self.config["minibatch_print"] if self.config["resume_epoch"] > 0 else None
-        )
+        # tb_writer = SummaryWriter(
+        #     log_dir=self.config["logdir"],
+        #     purge_step=self.config["resume_epoch"] * self.config["num_episodes_per_epoch"] // self.config["minibatch_print"] if self.config["resume_epoch"] > 0 else None
+        # )
 
         try:
             for epoch_id in range(self.config["resume_epoch"], self.config["resume_epoch"] + self.config["num_epochs"], 1):
