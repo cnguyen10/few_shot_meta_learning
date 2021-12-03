@@ -3,9 +3,9 @@ import numpy as np
 import higher
 import typing
 
-from src.HyperNetClasses import EnsembleNet
-from src.algorithms.MLBaseClass import MLBaseClass
-from src.algorithms.Maml import Maml
+from src.fsml.HyperNetClasses import EnsembleNet
+from src.fsml.algorithms.MLBaseClass import MLBaseClass
+from src.fsml.algorithms.Maml import Maml
 
 class Bmaml(MLBaseClass):
     def __init__(self, config: dict) -> None:

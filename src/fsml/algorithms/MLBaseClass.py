@@ -224,16 +224,15 @@ class MLBaseClass(object):
                                 model["f_base_net"].train()
                                 del loss_temp
                                 del accuracy_temp
-
-                # save model
-                checkpoint = {
-                    "hyper_net_state_dict": model["hyper_net"].state_dict(),
-                    "opt_state_dict": model["optimizer"].state_dict()
-                }
-                checkpoint_path = os.path.join(self.config['logdir'], 'Epoch_{0:d}.pt'.format(epoch_id + 1))
-                torch.save(obj=checkpoint, f=checkpoint_path)
-                print('State dictionaries are saved into {0:s}\n'.format(checkpoint_path))
-
+                if (epoch_id+1) % 100 == 0:
+                    # save model
+                    checkpoint = {
+                        "hyper_net_state_dict": model["hyper_net"].state_dict(),
+                        "opt_state_dict": model["optimizer"].state_dict()
+                    }
+                    checkpoint_path = os.path.join(self.config['logdir'], 'Epoch_{0:d}.pt'.format(epoch_id + 1))
+                    torch.save(obj=checkpoint, f=checkpoint_path)
+                    print('State dictionaries are saved into {0:s}\n'.format(checkpoint_path))
             print('Training is completed.')
         finally:
             print('\nClose tensorboard summary writer')

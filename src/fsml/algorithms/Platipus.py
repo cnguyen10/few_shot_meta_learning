@@ -10,9 +10,9 @@ import os
 import random
 import typing
 
-from src._utils import kl_divergence_gaussians
-from src.HyperNetClasses import PlatipusNet
-from src.algorithms.Maml import Maml
+from src.fsml._utils import kl_divergence_gaussians
+from src.fsml.HyperNetClasses import PlatipusNet
+from src.fsml.algorithms.Maml import Maml
 
 class Platipus(object):
     def __init__(self, config: dict) -> None:

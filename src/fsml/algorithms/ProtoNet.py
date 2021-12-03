@@ -3,9 +3,9 @@ import higher
 import typing
 import os
 
-from src.CommonModels import CNN, ResNet18
-from src._utils import get_cls_prototypes, euclidean_distance, train_val_split
-from src.algorithms.MLBaseClass import MLBaseClass
+from src.fsml.CommonModels import CNN, ResNet18
+from src.fsml._utils import get_cls_prototypes, euclidean_distance, train_val_split
+from src.fsml.algorithms.MLBaseClass import MLBaseClass
 
 class ProtoNet(MLBaseClass):
     def __init__(self, config: dict) -> None:

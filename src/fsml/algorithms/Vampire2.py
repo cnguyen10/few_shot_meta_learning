@@ -2,9 +2,9 @@ import torch
 import higher
 import typing
 
-from src.HyperNetClasses import NormalVariationalNet
-from src.algorithms.MLBaseClass import MLBaseClass
-from src.algorithms.Maml import Maml
+from src.fsml.HyperNetClasses import NormalVariationalNet
+from src.fsml.algorithms.MLBaseClass import MLBaseClass
+from src.fsml.algorithms.Maml import Maml
 
 class Vampire2(MLBaseClass):
     def __init__(self, config: dict) -> None:
