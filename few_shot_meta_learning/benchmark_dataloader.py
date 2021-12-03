@@ -1,6 +1,5 @@
-import torch
 import typing
-from src.own.create_benchmarks import create_benchmarks
+from create_benchmarks import create_benchmarks
 
 class BenchmarkDataset(torch.utils.data.Dataset):
     def __init__(self, benchmark) -> None:

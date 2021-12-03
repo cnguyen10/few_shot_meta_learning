@@ -1,18 +1,16 @@
 """
 Training PLATIPUS is quite time-consuming. One might need to train MAML, then load such paramters obtained from MAML as mu_theta to speed up the training of PLATIPUS.
 """
-
-import torch
 #from torch.utils.tensorboard import SummaryWriter
-
+import torch
 import numpy as np
 import os
 import random
 import typing
 
-from src.fsml._utils import kl_divergence_gaussians
-from src.fsml.HyperNetClasses import PlatipusNet
-from src.fsml.algorithms.Maml import Maml
+from few_shot_meta_learning.fsml._utils import kl_divergence_gaussians
+from few_shot_meta_learning.fsml.HyperNetClasses import PlatipusNet
+from few_shot_meta_learning.fsml.algorithms.Maml import Maml
 
 class Platipus(object):
     def __init__(self, config: dict) -> None:
