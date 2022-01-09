@@ -127,8 +127,8 @@ if not os.path.exists(path=config['logdir']):
 
 config['minibatch_print'] = np.lcm(config['minibatch'], 1000)
 
-config['device'] = torch.device('cuda:0' if torch.cuda.is_available() \
-    else torch.device('cpu'))
+config['device'] = torch.device('cuda:0') if torch.cuda.is_available() \
+    else torch.device('cpu')
 
 
 if __name__ == "__main__":
