@@ -30,7 +30,7 @@ python3 main.py --datasource miniImageNet --ml-algorithm bmaml --num-models 2 --
 python3 main.py --datasource miniImageNet --ml-algorithm protonet --network-architecture CNN --no-batchnorm --num-ways 5 --no-strided --num-epochs 100 --resume-epoch 0 --train
 
 # SIMPA
-python3 main.py --datasource miniImageNet --ml-algorithm simpa --network-architecture CNN --no-batchnorm --no-strided --num-ways 5 --k-shot 1 --num-models 2 --minibatch 5 --inner-lr 0.01 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
+python3 main.py --datasource miniImageNet --img-size 84 --img-size 84 --ml-algorithm simpa --network-architecture CNN --no-batchnorm --no-strided --num-ways 5 --k-shot 1 --num-models 1 --minibatch 10 --inner-lr 0.01 --meta-lr 0.001 --num-epochs 100 --resume-epoch 0 --train
 """
 import torch
 

@@ -6,6 +6,7 @@ This repository contains the implementations of many meta-learning algorithms to
 - [Bayesian Model-Agnostic Meta-Learning (BMAML)](https://papers.nips.cc/paper/7963-bayesian-model-agnostic-meta-learning.pdf) (without Chaser loss)
 - [Amortized Bayesian Meta-Learning](https://openreview.net/pdf?id=rkgpy3C5tX)
 - [Uncertainty in Model-Agnostic Meta-Learning using Variational Inference (VAMPIRE)](http://openaccess.thecvf.com/content_WACV_2020/papers/Nguyen_Uncertainty_in_Model-Agnostic_Meta-Learning_using_Variational_Inference_WACV_2020_paper.pdf)
+- [PAC-Bayes Meta-learning with Implicit Task-specific Posteriors](https://ieeexplore.ieee.org/document/9699417)
 
 ## Python package requirements
 - PyTorch __1.8.1__ or above (which introduces a new module called "Lazy", corresponding to the Dense layer in Tensorflow)
